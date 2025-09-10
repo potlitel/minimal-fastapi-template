@@ -4,6 +4,7 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Tests](https://github.com/rafsaf/minimal-fastapi-postgres-template/actions/workflows/tests.yml/badge.svg)](https://github.com/rafsaf/minimal-fastapi-postgres-template/actions/workflows/tests.yml)
 
+
 _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, it's 100% code used in template (docker image) with added my domain and https only._
 
 # Minimal async FastAPI + PostgreSQL template
@@ -13,8 +14,15 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
   - [Quickstart](#quickstart)
     - [1. Create repository from a template](#1-create-repository-from-a-template)
     - [2. Install dependecies with Poetry](#2-install-dependecies-with-poetry)
-    - [3. Setup database and migrations](#3-setup-database-and-migrations)
-    - [4. Now you can run app](#4-now-you-can-run-app)
+    - [3. To configure the database and migrations, make sure you are in the project root directory.](#3-to-configure-the-database-and-migrations-make-sure-you-are-in-the-project-root-directory)
+      - [3.1 Setup database](#31-setup-database)
+        - [3.1.1 Access Adminer](#311-access-adminer)
+        - [3.1.2 Connect to the database](#312-connect-to-the-database)
+        - [3.1.3 Login](#313-login)
+      - [3.2 Setup migrations](#32-setup-migrations)
+        - [3.2.1 Activate the virtual environment created in step 2](#321-activate-the-virtual-environment-created-in-step-2)
+        - [3.2.1 Run Alembic migrations](#321-run-alembic-migrations)
+    - [4. And this is it, now you can run app](#4-and-this-is-it-now-you-can-run-app)
     - [5. Activate pre-commit](#5-activate-pre-commit)
     - [6. Running tests](#6-running-tests)
   - [About](#about)
@@ -60,28 +68,93 @@ See [docs](https://docs.github.com/en/repositories/creating-and-managing-reposit
 ```bash
 cd your_project_name
 
-### Poetry install (python3.13)
+### Poetry install (python3.13) - also creates a virtual environment.
 poetry install
 ```
 
 Note, be sure to use `python3.13` with this template with either poetry or standard venv & pip, if you need to stick to some earlier python version, you should adapt it yourself (remove new versions specific syntax for example `str | int` for python < 3.10)
 
-### 3. Setup database and migrations
+### 3. To configure the database and migrations, make sure you are in the project root directory.
+
+#### 3.1 Setup database
 
 ```bash
-### Setup database
 docker-compose up -d
+```
 
-### Run Alembic migrations
+You should get an output similar to the following:
+
+```bash
+[+] Running 3/3
+ ✔ Network minimal-fastapi-template_default          Created                                                  0.0s
+ ✔ Container minimal-fastapi-template-adminer-1      Started                                                  0.4s
+ ✔ Container minimal-fastapi-template-postgres_db-1  Started                                                  0.4s
+```
+
+> [!NOTE]
+> This command will start both the PostgreSQL and [Adminer](https://www.adminer.org/en/) containers in the background.
+
+##### 3.1.1 Access Adminer  
+
+Once the containers are running, open your browser and go to the following address: http://localhost:{port} (this is the port defined in the docker-compose.yml file for the adminer service)  
+
+##### 3.1.2 Connect to the database  
+
+In the Adminer interface, fill in the connection fields with the following information:  
+- **Database engine**: PostgreSQL  
+- **Server**: postgres_db (this is the service name defined in the docker-compose.yml file)  
+- **User**: example (or the username you configured)  
+- **Password**: example (or the password you configured)  
+- **Database**: example (or the database name you configured)  
+
+##### 3.1.3 Login
+
+Click the "Login" button to connect to your PostgreSQL database. If everything is configured correctly, you should be able to access and manage your database through Adminer.
+
+#### 3.2 Setup migrations
+
+
+##### 3.2.1 Activate the virtual environment created in step 2
+
+```bash
+poetry shell
+```
+
+You should get an output similar to the following:
+
+```bash
+The currently activated Python version 3.12.1 is not supported by the project (^3.13).
+Trying to find and use a compatible version.
+Using python.exe (3.13.7)
+Spawning shell within C:\Users\potli\AppData\Local\pypoetry\Cache\virtualenvs\app-2BvOEdDg-py3.13
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
+
+Loading personal and system profiles took 833ms.
+```
+
+##### 3.2.1 Run Alembic migrations
+
+Run this command to create the migrations
+
+```bash
 alembic upgrade head
 ```
 
-### 4. Now you can run app
+You should get an output similar to the following:
 
 ```bash
-### And this is it:
-uvicorn app.main:app --reload
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> be24780c0da0, initial_migration
+```
 
+### 4. And this is it, now you can run app
+
+```bash
+uvicorn app.main:app --reload
 ```
 
 You should then use `git init` (if needed) to initialize git repository and access OpenAPI spec at http://localhost:8000/ by default. To customize docs url, cors and allowed hosts settings, read [section about it](#docs-url-cors-and-allowed-hosts).
