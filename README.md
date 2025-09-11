@@ -481,3 +481,6 @@ There are some **opinionated** default settings in `/app/main.py` for documentat
 ## License
 
 The code is under MIT License. It's here for educational purposes, created mainly to have a place where up-to-date Python and FastAPI software lives. Do whatever you want with this code.
+
+
+https://gemini.google.com/app/dc0ecb451da9c30c

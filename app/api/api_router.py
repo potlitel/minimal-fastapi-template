@@ -1,10 +1,16 @@
+from typing import Optional
 from fastapi import APIRouter
-
 from app.api import api_messages
 from app.api.endpoints import auth, users
+from app.core.crud_utils import crud_router_factory
+# from app.core import BaseRepository
+from app.core.repositories import BaseRepository, UserRepository
+from app.models import Base, User
+from app.schemas.requests import UserCreateRequest
+from app.schemas.responses import UserResponse
 
 auth_router = APIRouter()
-auth_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+auth_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 
 api_router = APIRouter(
     responses={
@@ -31,4 +37,12 @@ api_router = APIRouter(
         },
     }
 )
-api_router.include_router(users.router, prefix="/profile", tags=["profile"])
+api_router.include_router(users.router, prefix="/profile", tags=["Profile"])
+
+
+    
+# Se instancian los repositorios para cada modelo de la BD
+user_repository = UserRepository(User)
+users_router = crud_router_factory(user_repository, UserResponse, UserCreateRequest, "Users")
+user_router = APIRouter()
+user_router.include_router(users_router)
