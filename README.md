@@ -11,6 +11,7 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
 
 - [Minimal async FastAPI + PostgreSQL template](#minimal-async-fastapi--postgresql-template)
   - [Features](#features)
+  - [API Architecture Diagram with MediatR and Repository Patterns](#api-architecture-diagram-with-mediatr-and-repository-patterns)
   - [Quickstart](#quickstart)
     - [1. Create repository from a template](#1-create-repository-from-a-template)
     - [2. Install dependecies with Poetry](#2-install-dependecies-with-poetry)
@@ -51,7 +52,66 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
 
 <br>
 
+## API Architecture Diagram with MediatR and Repository Patterns
 
+Describes how the components of this application programming interface (API) (Presentation Layer) are organized, including the business logic (mediators/handlers) and how they interact, as well as the data access layer through the base repository. The diagram illustrates this architecture precisely.
+
+```mermaid
+classDiagram
+    direction LR
+    class Mediator {
+        +register_handler(request_type, handler_instance)
+        +send(request, db)
+    }
+
+    class GetItemsHandler {
+        +handle(query, db)
+    }
+    class GetItemHandler {
+        +handle(query, db)
+    }
+    class CreateItemHandler {
+        +handle(command, db)
+    }
+    class UpdateItemHandler {
+        +handle(command, db)
+    }
+    class DeleteItemHandler {
+        +handle(command, db)
+    }
+
+    class BaseRepository {
+        +get_all(db)
+        +get_by_id(id, db)
+        +create(db, data)
+        +update(db, item, data)
+        +delete(db, item)
+    }
+
+    class UserRepository
+    
+    class crud_router_factory {
+        +register_handlers()
+        +create_endpoints()
+    }
+
+    Mediator <-- crud_router_factory: <<uses>>
+    crud_router_factory ..> GetItemsHandler: <<registers>>
+    crud_router_factory ..> GetItemHandler: <<registers>>
+    crud_router_factory ..> CreateItemHandler: <<registers>>
+    crud_router_factory ..> UpdateItemHandler: <<registers>>
+    crud_router_factory ..> DeleteItemHandler: <<registers>>
+
+    GetItemsHandler --|> BaseRepository: <<uses>>
+    GetItemHandler --|> BaseRepository: <<uses>>
+    CreateItemHandler --|> BaseRepository: <<uses>>
+    UpdateItemHandler --|> BaseRepository: <<uses>>
+    DeleteItemHandler --|> BaseRepository: <<uses>>
+
+    UserRepository --|> BaseRepository: <<extends>>
+```
+
+This diagram clearly shows how the **crud_router_factory** acts as the central configuration point, connecting the **Mediator** with the **handlers**, and how these handlers, in turn, depend on a **Repository** for data operations, thus implementing the **MediatR pattern** along with the **Repository pattern**
 
 <kbd>![template-fastapi-minimal-openapi-example](https://drive.google.com/uc?export=view&id=1rIXFJK8VyVrV7v4qgtPFryDd5FQrb4gr)</kbd>
 
