@@ -45,6 +45,7 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
 - [x] SQLAlchemy 2.0, async queries, best possible autocompletion support
 - [x] PostgreSQL 16 database under `asyncpg`, docker-compose.yml
 - [x] Full [Alembic](https://alembic.sqlalchemy.org/en/latest/) migrations setup
+- [x] MediatR & Repository Patterns 
 - [x] Refresh token endpoint (not only access like in official template)
 - [x] Ready to go Dockerfile with [uvicorn](https://www.uvicorn.org/) webserver as an example
 - [x] [Poetry](https://python-poetry.org/docs/), `mypy`, `pre-commit` hooks with [ruff](https://github.com/astral-sh/ruff)
@@ -54,7 +55,16 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
 
 ## API Architecture Diagram with MediatR and Repository Patterns
 
-Describes how the components of this application programming interface (API) (Presentation Layer) are organized, including the business logic (mediators/handlers) and how they interact, as well as the data access layer through the base repository. The diagram illustrates this architecture precisely.
+This project leverages two key design patterns to ensure a clean, maintainable, and scalable architecture: MediatR and the Repository pattern.
+
+By combining these two patterns, we achieve a robust architecture where:
+
+ - Decoupling is a priority.
+ - Separation of Concerns is clear and well-defined.
+ - The system is highly scalable and testable.
+ - Business logic is neatly separated from data access logic.
+
+The following diagram describes how the components of this application programming interface (API) (Presentation Layer) are organized, including the business logic (mediators/handlers) and how they interact, as well as the data access layer through the base repository. The diagram illustrates this architecture precisely.
 
 ```mermaid
 classDiagram
@@ -112,6 +122,7 @@ classDiagram
 ```
 
 This diagram clearly shows how the **crud_router_factory** acts as the central configuration point, connecting the **Mediator** with the **handlers**, and how these handlers, in turn, depend on a **Repository** for data operations, thus implementing the **MediatR pattern** along with the **Repository pattern**
+
 
 <kbd>![template-fastapi-minimal-openapi-example](https://drive.google.com/uc?export=view&id=1rIXFJK8VyVrV7v4qgtPFryDd5FQrb4gr)</kbd>
 
