@@ -484,3 +484,6 @@ The code is under MIT License. It's here for educational purposes, created mainl
 
 
 https://gemini.google.com/app/dc0ecb451da9c30c
+https://www.perplexity.ai/search/dejeme-explicarle-mi-entorno-a-tfcTVUoJS66EVceuRvQu.w (Documentar )
+
+Usa inyección de dependencias para instanciar repositorios especializados según contexto o entidades a manejar. pedirle a felo que te lo explique, justo debajo del link este último

@@ -130,17 +130,11 @@ class UserRepository(BaseRepository):
             email=item_data['email'],
             hashed_password=get_password_hash(item_data['password']),
         )
-        # return await super().create(db, user.__dict__)
-        db.add(user)
-
-        try:
-            await db.commit()
-        except IntegrityError:  # pragma: no cover
-            await db.rollback()
-
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=api_messages.EMAIL_ADDRESS_ALREADY_USED,
-            )
-
-        return user
+        
+        # Crear un diccionario solo con los atributos necesarios
+        user_data = {
+            'email': user.email,
+            'hashed_password': user.hashed_password,
+        }
+        
+        return await super().create(db, user_data)
