@@ -10,7 +10,11 @@ This project demonstrates sending different types of telemetry from FastAPI appl
     - [Prometheus 📊](#prometheus-)
     - [Loki 🗂️](#loki-️)
     - [Grafana 📈](#grafana-)
+  - [🗂️ How the Data Division Works](#️-how-the-data-division-works)
+  - [📈 Diagram of the Observability Stack](#-diagram-of-the-observability-stack)
+    - [🧠 Diagram Explanation](#-diagram-explanation)
   - [How to Launch the Observability Stack Services 🚀🛠️](#how-to-launch-the-observability-stack-services-️)
+    - [Best practices applied](#best-practices-applied)
   - [Conclusion 🏁](#conclusion-)
   
 ---
@@ -102,6 +106,66 @@ Once your application traces reach the Jaeger container, you can open the Jaeger
 
 ---
 
+## 🗂️ How the Data Division Works
+
+The OpenTelemetry Collector is the core component that makes your observability stack work. It acts as a central hub for all your telemetry data, including traces, metrics, and logs. Its primary job is to receive data from your application and then forward it to the correct backend system for storage and visualization. This modular approach allows you to use the best tool for each type of telemetry.
+
+In our setup, the data is handled as follows:
+
+- **Traces**: Your FastAPI application generates traces for HTTP requests. These traces are sent to the OpenTelemetry Collector. Based on the traces pipeline configured in otel-collector-config.yaml, the collector forwards them to the Jaeger exporter. Jaeger is a specialized tool for visualizing distributed traces, which helps you track a single request as it moves through multiple services and components.
+
+- **Metrics**: Your application also generates metrics, such as request response times and error counts. These metrics are sent to the OpenTelemetry Collector. The collector, using the metrics pipeline, exposes them via its Prometheus exporter. Prometheus then scrapes (pulls) these metrics from the collector and stores them for monitoring and alerting.
+
+- **Logs**: Your application's log messages are also sent to the OpenTelemetry Collector. The collector's logs pipeline is configured to forward them to Loki, un sistema de agregación de logs de Grafana. Loki está diseñado para almacenar y consultar logs de manera eficiente, lo que te permite buscar y analizar eventos de tu aplicación.
+
+## 📈 Diagram of the Observability Stack
+
+The following diagram illustrates how your FastAPI application, the OpenTelemetry Collector, and the backend services (Loki, Jaeger, and Prometheus) are interconnected within your Docker environment. It shows the flow of traces, metrics, and logs from your application through the collector to their final destinations.
+
+```mermaid
+graph TD
+    subgraph "Application Containers"
+        A[FastAPI App]
+    end
+
+    subgraph "Observability Core"
+        B[OpenTelemetry Collector]
+    end
+    
+    subgraph "Backend Services"
+        C[Loki]
+        D[Jaeger]
+        E[Prometheus]
+        F[Grafana]
+    end
+
+    A -- "1. Logs (OTLP)" --> B
+    A -- "2. Traces (OTLP)" --> B
+    A -- "3. Metrics (OTLP)" --> B
+
+    B -- "Logs -->" --> C
+    B -- "Traces -->" --> D
+    B -- "Metrics -->" --> E
+
+    F -- "Query Logs" --> C
+    F -- "Query Metrics" --> E
+    F -- "Query Traces" --> D
+```
+
+### 🧠 Diagram Explanation
+
+- **FastAPI App**: This is your application, the source of all telemetry data. It's instrumented with the OpenTelemetry SDK to automatically generate logs, traces, and metrics.
+
+- **OpenTelemetry Collector**: This acts as the central hub. All telemetry data from the FastAPI app is sent here first. The collector then processes and routes the data based on its configuration. This is where the pipelines for traces, metrics, and logs are defined.
+
+- **Loki**: Receives and stores logs from the collector. It is optimized for storing and querying logs.
+
+- **Jaeger**: Receives and stores traces. Its primary function is to help you visualize and analyze the flow of requests across different services.
+
+- **Prometheus**: Receives and stores metrics. It pulls or "scrapes" metrics data from the collector.
+
+- **Grafana**: This is your visualization layer. It connects to Loki, Prometheus, and Jaeger as data sources. You can use Grafana to create dashboards, explore metrics, analyze traces, and search for logs, all from a single interface.
+
 ## How to Launch the Observability Stack Services 🚀🛠️
 
 The `docker-compose.yml` file is located in the root of this folder 🗂️ and defines all the services for the OpenTelemetry observability stack 📡.
@@ -112,6 +176,14 @@ To start all the services defined in this file, open a terminal 🖥️ in the r
 ```bash
 docker-compose up -d
 ```
+
+### Best practices applied
+ - **container_name** 🏷️: adds clarity when inspecting containers.
+ - **persistent volumes** 💾: to avoid losing historical data from metrics (Prometheus), dashboards (Grafana), and logs (Loki).
+ - **config mounts as :ro**🔒: prevents the container from modifying local configuration files.
+ - **depends_on**⏳: ensures Grafana does not start before Prometheus and Loki.
+ - **environment variables in Grafana** 🔑: set an initial user and password (you can move this to .env for better security).
+ - **explicit network names** 🌐: good practice for observability services.
 
 where:
 
