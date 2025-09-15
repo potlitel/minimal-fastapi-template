@@ -23,7 +23,11 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
       - [3.2 Setup migrations](#32-setup-migrations)
         - [3.2.1 Activate the virtual environment created in step 2](#321-activate-the-virtual-environment-created-in-step-2)
         - [3.2.1 Run Alembic migrations](#321-run-alembic-migrations)
+    - [5. Observability and OpenTelemetry](#5-observability-and-opentelemetry)
     - [4. And this is it, now you can run app](#4-and-this-is-it-now-you-can-run-app)
+    - [5. Docker deployment](#5-docker-deployment)
+      - [5.1 How to Run a Dockerfile](#51-how-to-run-a-dockerfile)
+      - [5.2 Ejecutar imagen Docker](#52-ejecutar-imagen-docker)
     - [5. Activate pre-commit](#5-activate-pre-commit)
     - [6. Running tests](#6-running-tests)
   - [About](#about)
@@ -222,6 +226,22 @@ INFO  [alembic.runtime.migration] Will assume transactional DDL.
 INFO  [alembic.runtime.migration] Running upgrade  -> be24780c0da0, initial_migration
 ```
 
+### 5. Observability and OpenTelemetry
+
+The explanation and the steps to deploy **OpenTelemetry** services, along with the basic observability concepts, have been moved to a separate file to keep this README more clear and organized.  
+
+👉 To run and learn more about this topic, please see [OpenTelemetry.md](./observability/OpenTelemetry.md).  
+
+> [!IMPORTANT]
+> You should deploy the **OpenTelemetry services before starting the Python API**, since the API relies on these services to properly collect and export telemetry data.
+
+```mermaid
+flowchart TD
+OTEL[OpenTelemetry Services] --> API[Python API]
+OTEL:::important
+API:::dependent
+```
+
 ### 4. And this is it, now you can run app
 
 ```bash
@@ -229,6 +249,45 @@ uvicorn app.main:app --reload
 ```
 
 You should then use `git init` (if needed) to initialize git repository and access OpenAPI spec at http://localhost:8000/ by default. To customize docs url, cors and allowed hosts settings, read [section about it](#docs-url-cors-and-allowed-hosts).
+
+### 5. Docker deployment
+
+#### 5.1 How to Run a Dockerfile
+
+If you want to run a Dockerfile, you need to build an image first and then start a container based on that image. Here’s how to do it step by step:
+
+En la raiz del proyecto, se encuentra un fichero Dockerfile, que contiene las intrucciones necesarias para dockerizar esta aplicación python, para esto, debemos ejecutar el siguiente comando:
+
+```bash
+docker build -t minimal-fastapi .
+```
+
+donde:
+
+- `-t image-name` sets a tag (name) for the created image.
+- The dot `.` indicates the build context is the current directory with your Dockerfile.
+
+> [!NOTE]
+> minimal-fastapi es el nombre del ejemplo, pero siéntase libre de escoger el nombre de su preferencia.
+
+#### 5.2 Ejecutar imagen Docker 
+
+Para ejecutar tu imagen Docker que contiene una aplicación FastAPI (por ejemplo, escucha en el puerto 8000 y usa Uvicorn como servidor), el comando recomendado es:
+
+Una vez completada la construcción de la imagen docker, puede instanciarla mediante el siguiente comando:
+
+```bash
+docker run --name fastapi-container -d -p 8000:8000 minimal-fastapi
+```
+donde:
+
+- **--name fastapi-container** le asigna un nombre a tu contenedor.
+- **-d** lo ejecuta en segundo plano (detached).
+- **-p 8000:8000** mapea el puerto local 8000 al interno del contenedor, así puedes acceder desde tu navegador en http://localhost:8000.
+- **minimal-fastapi** debe ser el nombre de la imagen que generaste con docker build.
+
+> [!NOTE]
+> Si tu Dockerfile expone otro puerto, cambia el parámetro de -p.
 
 ### 5. Activate pre-commit
 

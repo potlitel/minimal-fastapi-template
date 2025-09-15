@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # fastapi-app:
+  #   image: your-fastapi-image
+  #   build:
+  #     context: ./path-to-your-fastapi-app
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+  #     - OTEL_RESOURCE_ATTRIBUTES=service.name=FastAPIApp
+  #   ports:
+  #     - "8000:80"
+  #   networks:
+  #     - observability-network
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4317:4317"  # gRPC
+      - "4318:4318"  # HTTP
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config", "/etc/otel-collector-config.yaml"]
+    networks:
+      - observability-network
+  
+  jaeger: #Trazas service
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "6831:6831/udp" # UDP port for Jaeger agent
+      - "16686:16686" # Web UI
+      - "14268:14268" # HTTP port for spans
+    networks:
+      - observability-network
+
+  prometheus: #Métricas service
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - observability-network
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - observability-network
+
+  loki: #Logs service
+    image: grafana/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - observability-network
+
+networks:
+  observability-network:
+    driver: bridge

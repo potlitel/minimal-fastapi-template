@@ -4,8 +4,26 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
+from opentelemetry import trace
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from prometheus_fastapi_instrumentator import Instrumentator
+
 from app.api.api_router import api_router, auth_router, user_router
 from app.core.config import get_settings
+
+# Configuración de recursos
+resource = Resource(attributes={"service.name": "fastapi-service"})
+tracer_provider = TracerProvider(resource=resource)
+trace.set_tracer_provider(tracer_provider)
+
+# Configuración del exportador OTLP para trazas
+otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+span_processor = BatchSpanProcessor(otlp_exporter)
+tracer_provider.add_span_processor(span_processor)
 
 app = FastAPI(
     title="Minimal Fastapi Postgres Template",
@@ -14,6 +32,12 @@ app = FastAPI(
     openapi_url="/openapi.json",
     docs_url="/",
 )
+
+# Instrumentar FastAPI para OpenTelemetry
+FastAPIInstrumentor.instrument_app(app)
+
+# Instrumentar FastAPI para Prometheus
+Instrumentator().instrument(app).expose(app)
 
 app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

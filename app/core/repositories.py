@@ -112,7 +112,8 @@ class BaseRepository:
             await db.rollback()
             print(f"Error en delete for {self.db_model} entity: {e}")
             raise HTTPException(status_code=500, detail="Error al eliminar el registro")
-        return {"message": "Item deleted successfully"}
+        # return {"message": "Item deleted successfully"}
+        return db_item
     
     
 class UserRepository(BaseRepository):
