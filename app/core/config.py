@@ -42,8 +42,16 @@ class Database(BaseModel):
     port: int = 5432
     db: str = "postgres"
 
+class Telemetry(BaseSettings):
+    service_name: str = "service_name"
+    otlp_endpoint: str = "otl_endpoint"
+    insecure_otlp: bool = True
 
 class Settings(BaseSettings):
+    title: str = "Minimal Fastapi Postgres Template"
+    version: str = "6.1.0"
+    description: str = "https://github.com/potlitel/minimal-fastapi-template"
+    telemetry: Telemetry = Field(default_factory=Telemetry)
     security: Security = Field(default_factory=Security)
     database: Database = Field(default_factory=Database)
     log_level: str = "INFO"
