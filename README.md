@@ -289,6 +289,8 @@ donde:
 > [!NOTE]
 > Si tu Dockerfile expone otro puerto, cambia el parámetro de -p.
 
+Dentro de la carpeta docker deployment, se encuentran los archivos necesarios para ejecutar la imagen antes construída.
+
 ### 5. Activate pre-commit
 
 [pre-commit](https://pre-commit.com/) is de facto standard now for pre push activities like isort or black or its nowadays replacement ruff.
