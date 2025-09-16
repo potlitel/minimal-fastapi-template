@@ -1,3 +1,4 @@
+import logging
 import traceback
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -12,6 +13,12 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from prometheus_fastapi_instrumentator import Instrumentator
 
+# Instrumentar logs
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+
 from app.api.api_router import api_router, auth_router, user_router
 from app.core.config import get_settings
 
@@ -24,6 +31,18 @@ trace.set_tracer_provider(tracer_provider)
 otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
 span_processor = BatchSpanProcessor(otlp_exporter)
 tracer_provider.add_span_processor(span_processor)
+
+# Configura el proveedor de logs
+logger_provider = LoggerProvider()
+otlp_exporter = OTLPLogExporter(endpoint="http://otel-collector:4317", insecure=True)
+logger_provider.add_log_record_processor(BatchLogRecordProcessor(otlp_exporter))
+
+# Asigna el proveedor al handler
+handler = LoggingHandler(logger_provider=logger_provider)
+logging.getLogger().addHandler(handler)
+
+# Instrumenta el log de la aplicación
+LoggingInstrumentor().instrument(set_logging_format=True)
 
 app = FastAPI(
     title="Minimal Fastapi Postgres Template",
@@ -69,3 +88,7 @@ app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=get_settings().security.allowed_hosts,
 )
+
+# from app.core.setup_app import create_app
+
+# app = create_app()

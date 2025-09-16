@@ -24,6 +24,7 @@ opentelemetry-instrumentation-fastapi = "^0.58b0"
 opentelemetry-exporter-otlp = "^1.37.0"
 prometheus-client = "^0.22.1"
 prometheus-fastapi-instrumentator = "^7.1.0"
+opentelemetry-instrumentation-logging = "^0.58b0"
 
 [tool.poetry.group.dev.dependencies]
 coverage = "^7.9.1"
