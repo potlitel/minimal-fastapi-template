@@ -11,6 +11,8 @@ exporters:
       insecure: true
   prometheus: # El exportador de Prometheus del colector
     endpoint: "0.0.0.0:9090"
+  otlphttp: # <-- ¡Aquí está el exportador que faltaba!
+    endpoint: http://loki:3100/api/prom/push
 
 service:
   pipelines:
@@ -20,3 +22,6 @@ service:
     metrics:
       receivers: [otlp]
       exporters: [prometheus]
+    logs: # Para logs
+      receivers: [otlp]
+      exporters: [otlphttp] # Enviar logs a Loki usando otlphttp
