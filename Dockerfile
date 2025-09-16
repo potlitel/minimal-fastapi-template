@@ -11,7 +11,10 @@ COPY poetry.lock pyproject.toml ./
 RUN poetry export -o /requirements.txt --without-hashes
 
 FROM base AS final
-COPY --from=poetry /requirements.txt .
+COPY --from=poetry /requirements.txt /app/
+
+# Agrega esta línea para establecer el directorio de trabajo
+WORKDIR /app
 
 # Create venv, add it to path and install requirements
 RUN python -m venv /venv
@@ -31,6 +34,7 @@ COPY init.sh .
 # Expose port
 EXPOSE 8000
 
+RUN apt-get update && apt-get install -y dos2unix && dos2unix init.sh
 # Make the init script executable
 RUN chmod +x ./init.sh
 
