@@ -5,9 +5,9 @@ from app.api.endpoints import auth, users
 from app.core.crud_utils import crud_router_factory
 # from app.core import BaseRepository
 from app.core.repositories import BaseRepository, UserRepository
-from app.models import Base, User
+from app.models import Base, Bitacora, User
 from app.schemas.requests import UserCreateRequest
-from app.schemas.responses import UserResponse
+from app.schemas.responses import BitacoraResponse, UserResponse
 
 auth_router = APIRouter()
 auth_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
@@ -46,3 +46,16 @@ user_repository = UserRepository(User)
 users_router = crud_router_factory(user_repository, UserResponse, UserCreateRequest, "Users")
 user_router = APIRouter()
 user_router.include_router(users_router)
+
+# Se instancian los repositorios para cada modelo de la BD
+bitacora_repository = BaseRepository(Bitacora)
+# Para la Bitácora, solo necesitamos las rutas de lectura
+bitacoras_router = crud_router_factory(
+    repository=bitacora_repository,
+    modelResponse=BitacoraResponse,
+    modelRequest=None,  # No necesitamos un modelo de request si no hay escritura
+    model_name="Bitacora",
+    operations=["get_all", "get_one"]  # <--- Aquí especificas las operaciones
+)
+bitacora_router = APIRouter()
+bitacora_router.include_router(bitacoras_router)

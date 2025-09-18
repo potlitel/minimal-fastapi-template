@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api.api_router import api_router, auth_router, user_router
+from app.api.api_router import api_router, auth_router, user_router, bitacora_router
 from app.core.config import get_settings
 from app.core.telemetry import setup_telemetry
 
@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(api_router)
     app.include_router(user_router)
+    app.include_router(bitacora_router)
     
     # Configuración de Telemetría
     setup_telemetry(app)
