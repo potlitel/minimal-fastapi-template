@@ -3,9 +3,8 @@ version: '3.8'
 services:
   # Servicio para tu aplicación FastAPI
   api:
-    container_name: ${API_CONTAINER_NAME} # Nombre del contenedor como variable
-    build:
-      context: ..
+    container_name: ${API_CONTAINER_NAME}
+    image: minimal-fastapi
     depends_on:
       db:
         condition: service_healthy
@@ -17,7 +16,6 @@ services:
       - "8000:8000"
     restart: unless-stopped
     healthcheck:
-      # test: ["CMD-SHELL", "curl --fail http://localhost:8000/docs || exit 1"]
       test: ["CMD-SHELL", "curl --fail http://${API_HEALTHCHECK_HOST}:${API_HEALTHCHECK_PORT}/docs || exit 1"]
       interval: 1m30s
       timeout: 10s
@@ -25,7 +23,7 @@ services:
 
   # Servicio para la base de datos PostgreSQL
   db:
-    container_name: ${DB_CONTAINER_NAME} # Nombre del contenedor como variable
+    container_name: ${DB_CONTAINER_NAME}
     image: postgres:15-alpine
     networks:
       - app-network
