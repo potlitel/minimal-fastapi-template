@@ -55,3 +55,11 @@ class RefreshToken(Base):
         ForeignKey("user_account.user_id", ondelete="CASCADE"),
     )
     user: Mapped["User"] = relationship(back_populates="refresh_tokens")
+    
+class Bitacora(Base):
+    __tablename__ = 'bitacora'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("user_account.user_id", ondelete="CASCADE"))
+    entity: Mapped[str] = mapped_column(String(512), nullable=False, index=True )
+    action: Mapped[str] = mapped_column(String(512), nullable=False, index=True )

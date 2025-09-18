@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 
@@ -16,3 +17,9 @@ class AccessTokenResponse(BaseResponse):
 class UserResponse(BaseResponse):
     user_id: str
     email: EmailStr
+    
+class BitacoraResponse(BaseResponse):
+    user_id: str
+    entity: str
+    action: str
+    create_time: datetime
