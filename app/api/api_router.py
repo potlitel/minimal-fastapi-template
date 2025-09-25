@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.api import api_messages
 from app.api.endpoints import auth, users
 from app.core.crud_utils import crud_router_factory
@@ -41,21 +41,43 @@ api_router.include_router(users.router, prefix="/profile", tags=["Profile"])
 
 
     
-# Se instancian los repositorios para cada modelo de la BD
+# Instancias de repositorios
 user_repository = UserRepository(User)
-users_router = crud_router_factory(user_repository, UserResponse, UserCreateRequest, "Users")
-user_router = APIRouter()
-user_router.include_router(users_router)
-
-# Se instancian los repositorios para cada modelo de la BD
 bitacora_repository = BaseRepository(Bitacora)
-# Para la Bitácora, solo necesitamos las rutas de lectura
+
+# Routers para cada modelo
+users_router = crud_router_factory(
+    repository=user_repository,
+    modelResponse=UserResponse,
+    modelRequest=UserCreateRequest,
+    model_name="Users",
+)
+
 bitacoras_router = crud_router_factory(
     repository=bitacora_repository,
     modelResponse=BitacoraResponse,
-    modelRequest=None,  # No necesitamos un modelo de request si no hay escritura
+    modelRequest=None,
     model_name="Bitacora",
-    operations=["get_all", "get_one"]  # <--- Aquí especificas las operaciones
+    operations=["get_all", "get_one"],
 )
-bitacora_router = APIRouter()
-bitacora_router.include_router(bitacoras_router)
+
+# def get_user_repository():
+#     return UserRepository(User)
+
+# def get_bitacora_repository():
+#     return BaseRepository(Bitacora)
+
+# users_router = crud_router_factory(
+#     repository=Depends(get_user_repository),
+#     modelResponse=UserResponse,
+#     modelRequest=UserCreateRequest,
+#     model_name="Users",
+# )
+
+# bitacoras_router = crud_router_factory(
+#     repository=Depends(get_bitacora_repository),
+#     modelResponse=BitacoraResponse,
+#     modelRequest=None,
+#     model_name="Bitacora",
+#     operations=["get_all", "get_one"],
+# )

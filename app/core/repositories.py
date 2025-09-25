@@ -35,6 +35,7 @@ class BaseRepository:
         - **raises**: 500 HTTPException if database query fails.
         """
         try:
+            print(f"La consulta get_all se está ejecutando para el modelo: {self.db_model.__name__}")
             result = await db.execute(select(self.db_model).offset(skip).limit(limit))
             if user_id:
                 await self._log_action(db, user_id, self.db_model.__name__, 'READ_ALL')
@@ -153,4 +154,4 @@ class UserRepository(BaseRepository):
             'hashed_password': user.hashed_password,
         }
         
-        return await super().create(db, user_data)
+        return await super().create(db, user_data, user_id)

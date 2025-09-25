@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api.api_router import api_router, auth_router, user_router, bitacora_router
+from app.api.api_router import api_router, auth_router, users_router, bitacoras_router
 from app.core.config import get_settings
 from app.core.telemetry import setup_telemetry
 
@@ -25,7 +25,7 @@ def create_app() -> FastAPI:
         traceback.print_exc()
         return JSONResponse(
             status_code=500,
-            content={"detail": "Error interno del servidor. Revise logs para más información."},
+            content={"detail": f"Error interno del servidor durante el request {request}. Revise logs para más información.{exc}"},
         )
 
     # Configuración de Middlewares
@@ -47,8 +47,8 @@ def create_app() -> FastAPI:
     # Inclusión de Routers
     app.include_router(auth_router)
     app.include_router(api_router)
-    app.include_router(user_router)
-    app.include_router(bitacora_router)
+    app.include_router(users_router)
+    app.include_router(bitacoras_router)
     
     # Configuración de Telemetría
     setup_telemetry(app)
