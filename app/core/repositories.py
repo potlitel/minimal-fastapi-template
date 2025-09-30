@@ -5,8 +5,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import api_messages, deps
-from typing import Type
+from typing import Any, Optional, Type
+from sqlalchemy import delete
+from sqlalchemy.future import select
 
+from app.core.constants import CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_ONE_OPERATION, UPDATE_OPERATION
 from app.core.security.password import get_password_hash
 from app.models import Base, Bitacora, User
 
@@ -38,28 +41,52 @@ class BaseRepository:
             print(f"La consulta get_all se está ejecutando para el modelo: {self.db_model.__name__}")
             result = await db.execute(select(self.db_model).offset(skip).limit(limit))
             if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, 'READ_ALL')
+                await self._log_action(db, user_id, self.db_model.__name__, GET_ALL_OPERATION)
             return result.scalars().all()
         except SQLAlchemyError as e:
             # Logging o print del error
             print(f"Error en get_all for {self.db_model} entity: {e}")
             raise HTTPException(status_code=500, detail="Error al obtener todos los registros")
 
-    async def get_by_id(self, item_id: str, db: AsyncSession, user_id: str = None):
+    async def get_by_id(self, item_id: str, db: AsyncSession, user_id: str = None, id_column: str = "id"):
         """
         Retrieve a single record by its unique identifier.
 
         - **param item_id**: ID of the record to fetch.
         - **param db**: Database session.
         - **returns**: Single model instance or None.
-        - **raises**: 500 HTTPException if retrieval query fails.
+        - **raises**: 500 HTTPException if retrieval query fails, 404 if not found.
+        - **param id_column**: Name of the column to use for filtering (e.g., 'id', 'uuid', 'slug').
         """
-        try:
-            result = await db.execute(select(self.db_model).filter(self.db_model.user_id == item_id))
+        try: 
+            # --- CAMBIO CLAVE: Usar getattr() para obtener la columna dinámicamente ---    
+            # 1. Obtener la columna del modelo usando su nombre (id_column)
+            id_attribute = getattr(self.db_model, id_column)
+            print(f"La consulta get_by_id se está ejecutando para el modelo: {self.db_model.__name__} usando la columna id: {id_attribute}")
+            # 2. Construir la sentencia de selección
+            stmt = select(self.db_model).filter(id_attribute == item_id)
+            # stmt = select(self.db_model).filter(self.db_model.user_id == item_id)
+            result = await db.execute(stmt)
+            db_item = result.scalars().first()
+            
+            # 1. VERIFICACIÓN DE ELEMENTO NO ENCONTRADO (404)
+            if db_item is None:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"{self.db_model.__name__} not found"
+                )
+            # 2. Lógica de Log (Solo si el elemento fue encontrado)
             if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, 'READ')
-            return result.scalars().first()
+                await self._log_action(db, user_id, self.db_model.__name__, GET_ONE_OPERATION)
+            # 3. Retorno del elemento
+            return db_item
+    
+        except HTTPException:
+        # Capturamos la 404 que acabamos de lanzar y la propagamos.
+            raise
+        
         except SQLAlchemyError as e:
+            # Capturamos cualquier error de DB (e.g., timeout, sintaxis, conexión) y lanzamos 500.
             print(f"Error en get_by_id for {self.db_model} entity: {e}")
             raise HTTPException(status_code=500, detail=f"Error en get_by_id for {self.db_model} entity")
 
@@ -79,7 +106,7 @@ class BaseRepository:
             await db.commit()
             await db.refresh(db_item)
             if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, 'CREATE')
+                await self._log_action(db, user_id, self.db_model.__name__, CREATE_OPERATION)
         except IntegrityError:  # pragma: no cover
             await db.rollback()
 
@@ -104,33 +131,102 @@ class BaseRepository:
             await db.commit()
             await db.refresh(db_item)
             if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, 'UPDATE')
+                await self._log_action(db, user_id, self.db_model.__name__, UPDATE_OPERATION)
         except SQLAlchemyError as e:
             await db.rollback()
             print(f"Error en update for {self.db_model} entity: {e}")
             raise HTTPException(status_code=500, detail="Error al actualizar el registro")
         return db_item
 
-    async def delete(self, db: AsyncSession, db_item, user_id: str = None):
+    async def delete(self, item_id: Any, db: AsyncSession, user_id: str = None, id_column: str = "id"):
         """
-        Delete a record from the database.
-
+        Delete a record from the database by its ID.
+        
+        - **param item_id**: The unique identifier of the item to delete.
         - **param db**: Database session.
-        - **param db_item**: Instance to delete.
-        - **returns**: Confirmation message.
+        - **param id_column**: Name of the column to use for lookup (e.g., 'id', 'uuid').
+        - **returns**: Confirmation message or raises 404.
         """
+        # 1. Buscar el elemento (Esto se hacía antes en el router, pero es mejor encapsularlo aquí)
+        # Se asume que tienes un método self.get_by_id(id, db, user_id)
+        db_item_to_delete = await self.get_by_id(item_id, db, user_id=user_id, id_column=id_column)
+        
+        if not db_item_to_delete:
+            # El repositorio o el handler deben lanzar el error si no se encuentra
+            raise HTTPException(status_code=404, detail=f"{self.db_model.__name__} not found")
+            
         try:
-            await db.delete(db_item)
+            # 2. Eliminar el objeto encontrado
+            await db.delete(db_item_to_delete)
             await db.commit()
             if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, 'DELETE')
+                # Asumiendo que _log_action está disponible
+                await self._log_action(db, user_id, self.db_model.__name__, DELETE_OPERATION) 
+                
         except SQLAlchemyError as e:
             await db.rollback()
             print(f"Error en delete for {self.db_model} entity: {e}")
             raise HTTPException(status_code=500, detail="Error al eliminar el registro")
-        # return {"message": "Item deleted successfully"}
-        return db_item
+        return None    
     
+    # Define tu método en la clase BaseRepository:
+    async def delete_by_object(self, db: AsyncSession, db_item_to_delete: Base, user_id: Optional[str] = None) -> None:
+        """
+        Elimina un registro de la base de datos que ya ha sido cargado/validado.
+        
+        - **param db**: Sesión de base de datos.
+        - **param db_item_to_delete**: Instancia del modelo ORM existente a eliminar.
+        - **returns**: None (para indicar HTTP 204 No Content).
+        """
+        try:
+            # 1. Adjuntar/Fusionar el objeto a la sesión activa (CLAVE PARA LA ELIMINACIÓN)
+            # Esto asegura que el objeto es conocido y rastreado por la sesión 'db'.
+            db_item_to_delete = await db.merge(db_item_to_delete)
+            # 1. Eliminar el objeto adjunto
+            await db.delete(db_item_to_delete)
+            # 3. Confirmar la transacción
+            await db.commit()
+            
+            # 2. Loguear la acción (si aplica)
+            if user_id:
+                # Asegúrate de que DELETE_OPERATION esté definida y _log_action exista
+                await self._log_action(db, user_id, self.db_model.__name__, DELETE_OPERATION) 
+                
+        except SQLAlchemyError as e:
+            await db.rollback()
+            print(f"Error en delete_by_object for {self.db_model.__name__}: {e}")
+            # Este error es típicamente un error de concurrencia o de la DB (HTTP 500)
+            raise HTTPException(status_code=500, detail="Error al eliminar el registro en la base de datos")
+            
+        return None
+    
+    async def delete_by_id(self, item_id: Any, db: AsyncSession, user_id: Optional[str] = None, id_column: str = "id"):
+        """
+        Elimina un registro forzando la ejecución de una sentencia DELETE por clave.
+        """
+        try:
+            # 1. Obtener la columna dinámica
+            id_attribute = getattr(self.db_model, id_column)
+            
+            # 2. Construir la sentencia DELETE
+            stmt = delete(self.db_model).where(id_attribute == item_id)
+            
+            # 3. Ejecutar la sentencia DELETE
+            result = await db.execute(stmt)
+            
+            # 4. Confirmar la transacción
+            await db.commit()
+            
+            # Opcional: Si necesitas loguear el ID del item eliminado:
+            if user_id:
+                await self._log_action(db, user_id, self.db_model.__name__, DELETE_OPERATION)
+                
+        except SQLAlchemyError as e:
+            await db.rollback()
+            print(f"Error en delete_by_id (Query): {e}")
+            raise HTTPException(status_code=500, detail="Error de DB al ejecutar la eliminación.")
+            
+        return None # Para el 204 No Content
     
 class UserRepository(BaseRepository):
     async def create(self, db: AsyncSession, item_data: dict, user_id: str = None) -> Base:
@@ -142,16 +238,13 @@ class UserRepository(BaseRepository):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=api_messages.EMAIL_ADDRESS_ALREADY_USED,
             )
-
         user = User(
             email=item_data['email'],
             hashed_password=get_password_hash(item_data['password']),
         )
-        
         # Crear un diccionario solo con los atributos necesarios
         user_data = {
             'email': user.email,
             'hashed_password': user.hashed_password,
         }
-        
         return await super().create(db, user_data, user_id)

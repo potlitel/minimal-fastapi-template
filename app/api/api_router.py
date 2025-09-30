@@ -2,6 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 from app.api import api_messages
 from app.api.endpoints import auth, users
+from app.core.constants import GET_ALL_OPERATION, GET_ONE_OPERATION, READ_ONLY
 from app.core.crud_utils import crud_router_factory
 # from app.core import BaseRepository
 from app.core.repositories import BaseRepository, UserRepository
@@ -51,6 +52,7 @@ users_router = crud_router_factory(
     modelResponse=UserResponse,
     modelRequest=UserCreateRequest,
     model_name="Users",
+    id_column_name="user_id"
 )
 
 bitacoras_router = crud_router_factory(
@@ -58,26 +60,6 @@ bitacoras_router = crud_router_factory(
     modelResponse=BitacoraResponse,
     modelRequest=None,
     model_name="Bitacora",
-    operations=["get_all", "get_one"],
+    id_type=int,
+    operations=READ_ONLY
 )
-
-# def get_user_repository():
-#     return UserRepository(User)
-
-# def get_bitacora_repository():
-#     return BaseRepository(Bitacora)
-
-# users_router = crud_router_factory(
-#     repository=Depends(get_user_repository),
-#     modelResponse=UserResponse,
-#     modelRequest=UserCreateRequest,
-#     model_name="Users",
-# )
-
-# bitacoras_router = crud_router_factory(
-#     repository=Depends(get_bitacora_repository),
-#     modelResponse=BitacoraResponse,
-#     modelRequest=None,
-#     model_name="Bitacora",
-#     operations=["get_all", "get_one"],
-# )
