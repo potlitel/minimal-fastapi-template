@@ -2,7 +2,7 @@
 CURRENT_MODULE = __name__
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Callable, List, Optional, Type, Any, TypeVar
-from pydantic import BaseModel, Field # Necesaria si IRequest hereda de un BaseModel
+from pydantic import BaseModel, ConfigDict, Field # Necesaria si IRequest hereda de un BaseModel
 from app.core.constants import ALL_OPERATIONS, CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_ONE_OPERATION, UPDATE_OPERATION
 from app.core.cqrs.commands_queries import CreateItemCommand, DeleteItemCommand, GetItemByIdQuery, GetItemsQuery, UpdateItemCommand
 from app.core.cqrs.handlers import CreateItemHandler, DeleteItemHandler, GetItemHandler, GetItemsHandler, UpdateItemHandler
@@ -27,6 +27,7 @@ class IRequest(BaseModel):
     # Los hacemos opcionales para que GET_ALL y CREATE no fallen su validación.
     item_id: Optional[Any] = Field(default=None)         # ID del registro a buscar
     id_column_name: str = Field(default="id")           # Columna a usar para la búsqueda
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     
 # --- Tipos Genéricos y Constantes ---
 T = TypeVar('T', bound=Base)
@@ -122,16 +123,20 @@ def crud_router_factory(
     # Crear las rutas según las operaciones
     if GET_ALL_OPERATION in operations:
         def logic_get_all(repo, req, db):
-            return repo.get_all(db, user_id=req.user_id)
+            #return repo.get_all(db, user_id=req.user_id)
+            return repo.get_all(db, skip=req.skip, limit=req.limit, user_id=req.user_id)
         
-        QueryAll = create_and_register_handler("getall", {}, logic_get_all)
+        QueryAll = create_and_register_handler("getall", {"skip": (int, 0),"limit": (int, 10)}, logic_get_all)
         
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = GET_ALL_OPERATION in secure_operations
         @router.get("/", response_model=List[modelResponse], 
                      summary=f"Retrieve all {model_name} items", 
                      description=f"📚Fetch a list of all {model_name} records from the database.")
-        async def read_all(db: AsyncSession = Depends(deps.get_session), 
+        async def read_all(db: AsyncSession = Depends(deps.get_session),
+                           # Recibir skip y limit como query parameters de HTTP
+                            skip: int = 0, 
+                            limit: int = 10, 
                             # Inyectamos el usuario de forma condicional
                             current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None):
             """
@@ -142,7 +147,9 @@ def crud_router_factory(
             # Lógica para manejar el user_id
             user_id = current_user.user_id if current_user else None
             # query = GetItemsQuery(user_id=user_id)
-            query = QueryAll(db=db, user_id=user_id)
+            query = QueryAll(db=db, user_id=user_id, 
+                             skip=skip,     # <--- Pasando el valor del HTTP query param
+                             limit=limit)
             return await mediator.send(query, db)
     
     if GET_ONE_OPERATION in operations:
