@@ -37,6 +37,11 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
     - [3. Create request and response schemas](#3-create-request-and-response-schemas)
     - [4. Create endpoints](#4-create-endpoints)
     - [5. Write tests](#5-write-tests)
+    - [6. 🚀 How to Run Your Tests](#6--how-to-run-your-tests)
+      - [6.1. Running All Tests (Recommended)](#61-running-all-tests-recommended)
+      - [6.2. Running with Detailed Information (Verbose)](#62-running-with-detailed-information-verbose)
+      - [6.3. Running a Specific File](#63-running-a-specific-file)
+      - [6.4. Running a Single Test](#64-running-a-single-test)
   - [Design](#design)
     - [Deployment strategies - via Docker image](#deployment-strategies---via-docker-image)
     - [Docs URL, CORS and Allowed Hosts](#docs-url-cors-and-allowed-hosts)
@@ -559,6 +564,44 @@ async def test_get_all_my_pets(
     ]
 
 
+```
+
+### 6. 🚀 How to Run Your Tests
+
+You should run Pytest from the root directory of your project. Pytest is configured to automatically discover all fixtures and test files (test_*.py) in your project.
+
+Make sure you are not using parallelism if you experience coverage issues (--cov).
+
+#### 6.1. Running All Tests (Recommended)
+
+Run the framework to scan and run all the tests found:
+
+```bash
+pytest
+```
+
+#### 6.2. Running with Detailed Information (Verbose)
+
+Use the `-v` flag to see the name of each test and a more comprehensive summary:
+
+```bash
+pytest -v
+```
+
+#### 6.3. Running a Specific File
+
+Useful for focusing on a specific entity (e.g., User). Make sure the path is correct (e.g., tests/test_core/):
+
+```bash
+pytest app/tests/test_core/test_user_crud_router_factory.py -n 0
+```
+
+#### 6.4. Running a Single Test
+
+For quick debugging of a specific function within a file. Use double colons `(::)` to specify the function:
+
+```bash
+pytest app/tests/test_core/test_user_crud_router_factory.py::test_03_delete_user_and_verify_404
 ```
 
 ## Design
