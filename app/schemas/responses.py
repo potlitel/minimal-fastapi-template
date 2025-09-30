@@ -19,6 +19,7 @@ class UserResponse(BaseResponse):
     email: EmailStr
     
 class BitacoraResponse(BaseResponse):
+    id:int
     user_id: str
     entity: str
     action: str
