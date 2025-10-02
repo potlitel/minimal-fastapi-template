@@ -132,10 +132,37 @@ classDiagram
 
 This diagram clearly shows how the **crud_router_factory** acts as the central configuration point, connecting the **Mediator** with the **handlers**, and how these handlers, in turn, depend on a **Repository** for data operations, thus implementing the **MediatR pattern** along with the **Repository pattern**
 
+Además, existe una combinación de Arquitectura Limpia (para CRUD genérico) y Arquitectura de Cortes Verticales (para Features de negocio -**Lógica de Negocio Avanzada**-) como una práctica de diseño moderna y muy potente. 💪
 
-<kbd>![template-fastapi-minimal-openapi-example](https://drive.google.com/uc?export=view&id=1rIXFJK8VyVrV7v4qgtPFryDd5FQrb4gr)</kbd>
+La idea es simple:
 
+- **Arquitectura Limpia (Horizontal)**: Tus Handlers CRUD genéricos seguirán gestionando las capas horizontalmente (Controller -> Mediator -> Handler -> Repository).
 
+- **Cortes Verticales (Vertical Slice)**: La lógica avanzada se encapsulará verticalmente por feature o caso de uso. Cada feature (como "Obtener Usuarios Activos") tendrá sus propios archivos de Query y Handler dentro de su propio directorio.
+
+    ```bash
+        app/
+        ├── features/                                     # 🟢 ARQUITECTURA VERTICAL (Vertical Slices)
+        │   # Contiene la lógica de negocio avanzada, donde cada subdirectorio es un CASO DE USO/FEATURE completo.
+        │   └── users/
+        │       └── get_active_users/                     # Feature: Obtener Usuarios Activos (Un "Slice")
+        │           ├── get_active_users_handler.py       # El **Handler** específico (Lógica: `WHERE is_active = True`).
+        │           ├── get_active_users_query.py         # La **Query** DTO única para esta intención.
+        │           └── get_active_users_endpoint.py      # El **Endpoint** de FastAPI que registra y llama al Mediator.
+        │       └── create_premium_user/                  # Ejemplo de otro Corte Vertical (Command)
+        │           └── ... (contiene Command, Handler, y Endpoint)
+        ├── core/                                         # 🔵 ARQUITECTURA HORIZONTAL (Clean Arch / CRUD Genérico)
+        │   # Contiene los cimientos de la aplicación que son transversales a todos los FEATURES.
+        │   └── ... (Tus Handlers CRUD genéricos y BaseRepository permanecen aquí)
+        │   ├── cqrs/
+        │   │   ├── commands_queries.py     # DTOs CRUD Genéricos (CreateItemCommand, GetItemByIdQuery, etc.).
+        │   │   ├── handlers.py             # **Handlers CRUD Genéricos** (CreateItemHandler, GetItemHandler, etc.).
+        │   │   └── mediator.py             # Implementación del Patrón Mediator (Manejo Centralizado).
+        │   ├── repositories.py             # **BaseRepository** Genérico (contiene CRUD, get_by_filters, etc.).
+        └── models/
+            └── user.py
+    ```
+<!-- <kbd>![template-fastapi-minimal-openapi-example](https://drive.google.com/uc?export=view&id=1rIXFJK8VyVrV7v4qgtPFryDd5FQrb4gr)</kbd> -->
 
 ## Quickstart
 
@@ -338,6 +365,26 @@ The template was adpoted to my current style and knowledge, the test based expan
 - run test in paraller in many processes for speed 
 - transactions rollback after every test
 - create test databases instead of having another in docker-compose.yml
+
+2025 update:
+
+Adaptado a un sistema robusto, híbrido en arquitectura y centrado en la seguridad de tipos y la mantenibilidad:
+
+- Refactorización de Arquitectura y Patrones:
+  El cambio más significativo ha sido la implementación estricta del patrón **CQRS (Command Query Responsibility Segregation)** con un **Mediator**, desacoplando radicalmente la aplicación:
+  - **Implementación de CQRS/Mediator**: Se eliminó la lógica de negocio directamente de los endpoints de FastAPI y se centralizó el flujo de trabajo a través del Mediator. Esto mejoró la separación de preocupaciones y la capacidad de prueba.
+  - **Diseño de Arquitectura Híbrida (Horizontal/Vertical):**
+    - **Horizontal (CRUD Genérico):** Se creó el crud_router_factory para generar automáticamente endpoints CRUD, enlazándolos a **Handlers Genéricos** (CreateItemHandler, GetItemHandler). Esto eliminó el código repetitivo y aseguró que toda la funcionalidad CRUD pase por el patrón CQRS.
+    - **Vertical (Lógica de Negocio):** Se adoptó la **Arquitectura de Cortes Verticales (Vertical Slice)** para la lógica avanzada. Cada feature (ej., get_active_users) ahora encapsula su propia Query, Handler y Endpoint en un solo slice, aumentando la **cohesión** y la escalabilidad del sistema por caso de uso.
+  - **Genericidad de DTOs y Repositorios:** 
+    - Se validó la integración del modelo Bitacora, configurando el crud_router_factory específicamente con id_type=int y restringiendo las operaciones a solo lectura (READ_ONLY), confirmando que la factoría maneja restricciones por entidad.
+    - Se modificaron los DTOs de Command/Query (GetItemByIdQuery, UpdateItemCommand) y la firma del BaseRepository para ser **agnósticos al nombre de la columna ID** (id_column_name), soportando IDs enteros, UUIDs o cualquier clave de búsqueda, haciendo el sistema verdaderamente reutilizable.
+  - Gestión de la Entidad Bitácora (Auditoría):
+    - La Bitacora se incorporó como una entidad clave, gestionando las acciones del usuario (tipo auditoría).
+    - Se validó su integración en el sistema genérico: se configuró el crud_router_factory para restringir sus operaciones a solo lectura (READ_ONLY) y utilizar id_type=int, confirmando que la factoría maneja restricciones específicas por entidad de manera flexible.
+
+
+
 
 <br>
 
