@@ -172,11 +172,14 @@ class BaseRepository:
     # Define tu método en la clase BaseRepository:
     async def delete_by_object(self, db: AsyncSession, db_item_to_delete: Base, user_id: Optional[str] = None) -> None:
         """
-        Elimina un registro de la base de datos que ya ha sido cargado/validado.
-        
-        - **param db**: Sesión de base de datos.
-        - **param db_item_to_delete**: Instancia del modelo ORM existente a eliminar.
-        - **returns**: None (para indicar HTTP 204 No Content).
+        Deletes a record from the database using an already loaded/validated ORM model instance.
+        This is the preferred method when the object has been retrieved by a Handler (e.g., DeleteItemHandler).
+
+        :param db: The active asynchronous SQLAlchemy session.
+        :param db_item_to_delete: The existing ORM model instance (e.g., the 'User' instance) to be deleted.
+        :param user_id: The ID of the user performing the operation (for logging/auditing purposes).
+        :returns: None, indicating a successful response (HTTP 204 No Content).
+        :raises HTTPException: If a SQLAlchemy error occurs (e.g., concurrency or foreign key constraint).
         """
         try:
             # 1. Adjuntar/Fusionar el objeto a la sesión activa (CLAVE PARA LA ELIMINACIÓN)
