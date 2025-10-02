@@ -1,7 +1,7 @@
 # crud_utils.py
 CURRENT_MODULE = __name__
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Callable, List, Optional, Type, Any, TypeVar
+from typing import Callable, Dict, List, Optional, Type, Any, TypeVar
 from pydantic import BaseModel, ConfigDict, Field # Necesaria si IRequest hereda de un BaseModel
 from app.core.constants import ALL_OPERATIONS, CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_ONE_OPERATION, UPDATE_OPERATION
 from app.core.cqrs.commands_queries import CreateItemCommand, DeleteItemCommand, GetItemByIdQuery, GetItemsQuery, UpdateItemCommand
@@ -35,6 +35,16 @@ TRepository = TypeVar('TRepository', bound=BaseRepository)
 ModelResponse = TypeVar("ModelResponse")
 ModelRequest = TypeVar("ModelRequest")
 
+# --- Constantes para simplificar el código ---
+# Mapeo del nombre de la operación al Handler existente
+HANDLER_MAP = {
+    GET_ALL_OPERATION: GetItemsHandler,
+    GET_ONE_OPERATION: GetItemHandler,
+    CREATE_OPERATION: CreateItemHandler,
+    UPDATE_OPERATION: UpdateItemHandler,
+    DELETE_OPERATION: DeleteItemHandler,
+}
+
 def crud_router_factory(
     repository: TRepository,
     modelResponse: Type[ModelResponse],
@@ -46,6 +56,15 @@ def crud_router_factory(
     secure_operations: Optional[List[str]] = None
 ):
     router = APIRouter(prefix=f"/{model_name.lower()}", tags=[model_name])
+    
+    # Mapeo de campos requeridos para cada Command/Query
+    REQUEST_FIELDS_MAP = {
+        GET_ALL_OPERATION: {"skip": (int, 0), "limit": (int, 10)},
+        GET_ONE_OPERATION: {"item_id": (id_type, ...), "id_column_name": (str, ...)}, 
+        CREATE_OPERATION: {"item_data": (dict, ...)},
+        UPDATE_OPERATION: {"item_id": (str, ...), "item_data": (dict, ...), "id_column_name": (str, ...)},
+        DELETE_OPERATION: {"item_id": (str, ...), "id_column_name": (str, ...)},
+    }
     
     # 1. Definir las operaciones principales por defecto
     if operations is None:
@@ -112,6 +131,93 @@ def crud_router_factory(
         mediator.register_handler(UniqueRequest, UniqueHandler(repository))
         return UniqueRequest 
 
+    def create_request_and_map_handler(op_name: str, handler_class: Type, **kwargs):
+        """
+        Genera dinámicamente una clase de Request/Command ÚNICA (el 'Sello') 
+        y registra su mapeo con el Handler de lógica de negocio correspondiente.
+
+        Esta función establece el vínculo central en el patrón Mediator/CQRS para 
+        una operación CRUD específica (ej., GET_ALL) y una entidad (ej., User).
+
+        :param op_name: Nombre de la operación (ej., 'getall', 'create'). 
+                        Se usa para generar el nombre de la clase Request/Command.
+        :param handler_class: La clase Handler preexistente (ej., GetItemsHandler) 
+                            que contiene la lógica de negocio para esta operación.
+
+        :returns: La clase de Request/Command dinámica recién creada (ej., GetUsersAllRequest).
+                Esta clase debe ser usada en el endpoint de FastAPI para construir el objeto.
+
+        ### 🧠 El Mecanismo del "Sello Único" (Clase Dinámica)
+
+        La función utiliza la herramienta `type()` de Python para crear una clase Pydantic en tiempo de ejecución. 
+        Esto es crucial porque permite que cada entidad (Users, Items, etc.) tenga su propia Request
+        personalizada (aunque se basen en los mismos campos) sin necesidad de definirlas manualmente.
+
+        **Ejemplo Demostrativo (para la operación 'getall' en la entidad 'User'):**
+
+        1.  **Datos de entrada:** La función toma los campos del mapeo global (ej., `skip: int = 0`, `limit: int = 10`) y la clase base `IRequest` (que añade `db` y `user_id`).
+        
+        2.  **Creación del Sello:** La función construye y retorna una nueva clase:
+            
+            ```python
+            # Resultado de type() al construir la Query de paginación para User:
+            class GetUsersAllRequest(IRequest):
+                skip: int = Field(default=0)
+                limit: int = Field(default=10)
+                # user_id y db vienen de IRequest
+            ```
+            
+            El objeto retornado, `UniqueRequest` (ej., **`GetUsersAllRequest`**), es el "Sello Único". Este sello ahora tiene los atributos **`.skip`**, **`.limit`**, **`.user_id`**, etc., y es la única clave que el **Mediator** necesita para encontrar el **Handler** (`GetItemsHandler`) que ejecutará la lógica de la paginación.
+
+        **Proceso de Registro:**
+        La función también garantiza que esta clase `UniqueRequest` se registra inmediatamente con una nueva instancia del `handler_class`, inyectándole el `repository` específico de la entidad.
+        Para más ayuda, consultar https://gemini.google.com/app/a98aec1368ec4956
+        """
+        
+        request_type_name = f"{op_name.capitalize()}{model_name}Request"
+        if op_name == GET_ONE_OPERATION:
+            base_fields = {"item_id": (kwargs.get('id_type'), ...), "id_column_name": (str, ...)}
+        base_fields = REQUEST_FIELDS_MAP.get(op_name, {}) 
+
+        # --- DICIONARIOS CLAVE PARA CONSTRUCCIÓN DINÁMICA ---
+        dynamic_annotations: Dict[str, Any] = {}
+        dynamic_fields: Dict[str, Any] = {} 
+        
+        # 1. Iterar sobre los campos para separar la anotación del valor/Field
+        for field_name, (field_type, field_default) in base_fields.items():
+            
+            # 1a. REGISTRAR ANOTACIÓN: Todos los campos DEBEN estar en __annotations__
+            dynamic_annotations[field_name] = field_type
+            
+            # 1b. REGISTRAR VALOR O FIELD: Para el namespace de la clase
+            if field_default is ...:
+                # Si es requerido (usamos el default implícito de Pydantic)
+                pass 
+            else:
+                # Si tiene un valor por defecto (ej. skip=0, limit=10), usamos Field
+                # Esto es lo que Pydantic V2 espera: Field(default=...)
+                dynamic_fields[field_name] = Field(default=field_default, annotation=field_type)
+
+
+        # 2. Construir el Namespace Final
+        # El namespace de la clase necesita:
+        # - '__module__': Para evitar advertencias.
+        # - '__annotations__': Para que Pydantic conozca los tipos.
+        # - Los campos con valores por defecto (ej. skip=Field(...))
+        dynamic_namespace = {
+            '__module__': handler_class.__module__,
+            '__annotations__': dynamic_annotations, # <--- ¡Aquí Pydantic busca 'skip'!
+            **dynamic_fields # <--- Aquí añadimos los campos con Field
+        }
+        
+        # 3. Creación de la clase Command/Query ÚNICA
+        # UniqueRequest hereda de IRequest (que debe heredar de pydantic.BaseModel)
+        UniqueRequest = type(request_type_name, (IRequest,), dynamic_namespace)
+        
+        # 4. Registro en MediatR
+        mediator.register_handler(UniqueRequest, handler_class(repository))
+        
+        return UniqueRequest 
     # ---
     
     # -------------------------------------------------------
@@ -122,11 +228,12 @@ def crud_router_factory(
     
     # Crear las rutas según las operaciones
     if GET_ALL_OPERATION in operations:
-        def logic_get_all(repo, req, db):
-            #return repo.get_all(db, user_id=req.user_id)
-            return repo.get_all(db, skip=req.skip, limit=req.limit, user_id=req.user_id)
+        # def logic_get_all(repo, req, db):
+        #     #return repo.get_all(db, user_id=req.user_id)
+        #     return repo.get_all(db, skip=req.skip, limit=req.limit, user_id=req.user_id)
         
-        QueryAll = create_and_register_handler("getall", {"skip": (int, 0),"limit": (int, 10)}, logic_get_all)
+        # QueryAll = create_and_register_handler("getall", {"skip": (int, 0),"limit": (int, 10)}, logic_get_all)
+        QueryAll = create_request_and_map_handler(GET_ALL_OPERATION, HANDLER_MAP[GET_ALL_OPERATION])
         
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = GET_ALL_OPERATION in secure_operations
@@ -134,11 +241,10 @@ def crud_router_factory(
                      summary=f"Retrieve all {model_name} items", 
                      description=f"📚Fetch a list of all {model_name} records from the database.")
         async def read_all(db: AsyncSession = Depends(deps.get_session),
-                           # Recibir skip y limit como query parameters de HTTP
-                            skip: int = 0, 
-                            limit: int = 10, 
-                            # Inyectamos el usuario de forma condicional
-                            current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None):
+                           skip: int = 0, 
+                           limit: int = 10, 
+                           # Inyectamos el usuario de forma condicional
+                           current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None):
             """
             Retrieve all items of type {model_name}.
 
@@ -146,16 +252,16 @@ def crud_router_factory(
             """
             # Lógica para manejar el user_id
             user_id = current_user.user_id if current_user else None
-            # query = GetItemsQuery(user_id=user_id)
-            query = QueryAll(db=db, user_id=user_id, 
-                             skip=skip,     # <--- Pasando el valor del HTTP query param
-                             limit=limit)
+            query = QueryAll(db=db, user_id=user_id, skip=skip, limit=limit)
             return await mediator.send(query, db)
     
     if GET_ONE_OPERATION in operations:
-        async def logic_get_one(repo, req, db):
-            return await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=req.id_column_name) 
-        QueryOne = create_and_register_handler("getonebyid", {}, logic_get_one)
+        # async def logic_get_one(repo, req, db):
+        #     return await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=req.id_column_name) 
+        # QueryOne = create_and_register_handler("getonebyid", {}, logic_get_one)
+        # Aquí eliminamos 'logic_get_one'
+        # Añadimos item_id como valor requerido en el mapeo global REQUEST_FIELDS_MAP
+        QueryOne = create_request_and_map_handler(GET_ONE_OPERATION, HANDLER_MAP[GET_ONE_OPERATION])
         
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = GET_ONE_OPERATION in secure_operations
@@ -180,9 +286,10 @@ def crud_router_factory(
             return await mediator.send(query, db)
     
     if CREATE_OPERATION in operations:
-        def logic_create(repo, req, db):
-            return repo.create(db, item_data=req.item_data, user_id=req.user_id)
-        CommandCreate = create_and_register_handler("create", {"item_data": dict}, logic_create)
+        # def logic_create(repo, req, db):
+        #     return repo.create(db, item_data=req.item_data, user_id=req.user_id)
+        # CommandCreate = create_and_register_handler("create", {"item_data": dict}, logic_create)
+        CommandCreate = create_request_and_map_handler(CREATE_OPERATION, HANDLER_MAP[CREATE_OPERATION])
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = CREATE_OPERATION in secure_operations
         @router.post("/", response_model=modelResponse, 
@@ -207,17 +314,18 @@ def crud_router_factory(
             return await mediator.send(command, db)
 
     if UPDATE_OPERATION in operations:
-        async def logic_update(repo, req, db):
-            # 1. BÚSQUEDA Y VALIDACIÓN (la verificación de existencia)
-            # Lógica más compleja: obtener, validar y actualizar (como en tu original, pero encapsulado)
-            db_item = await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=id_column_name)
-            if not db_item:
-                # El handler es responsable de lanzar la excepción
-                raise HTTPException(status_code=404, detail=f"{model_name} not found")
-            # 2. ACTUALIZACIÓN (llama a tu método 'update' con el objeto validado)
-            return repo.update(db, db_item, req.item_data, user_id=req.user_id)
+        # async def logic_update(repo, req, db):
+        #     # 1. BÚSQUEDA Y VALIDACIÓN (la verificación de existencia)
+        #     # Lógica más compleja: obtener, validar y actualizar (como en tu original, pero encapsulado)
+        #     db_item = await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=id_column_name)
+        #     if not db_item:
+        #         # El handler es responsable de lanzar la excepción
+        #         raise HTTPException(status_code=404, detail=f"{model_name} not found")
+        #     # 2. ACTUALIZACIÓN (llama a tu método 'update' con el objeto validado)
+        #     return repo.update(db, db_item, req.item_data, user_id=req.user_id)
+        CommandUpdate = create_request_and_map_handler(UPDATE_OPERATION, HANDLER_MAP[UPDATE_OPERATION])
             
-        CommandUpdate = create_and_register_handler("update", {"item_data": dict}, logic_update)
+        # CommandUpdate = create_and_register_handler("update", {"item_data": dict}, logic_update)
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = UPDATE_OPERATION in secure_operations
         @router.put("/{item_id}", response_model=modelResponse,
@@ -243,28 +351,29 @@ def crud_router_factory(
             return await mediator.send(command, db)
 
     if DELETE_OPERATION in operations:
-        async def logic_delete(repo, req, db):
-            # 🎯 Ejemplo de printf con logging (usando f-string)
-            # 1. BÚSQUEDA Y VALIDACIÓN (la verificación de existencia)
-            # Lógica más compleja: obtener, validar y actualizar (como en tu original, pero encapsulado)
-            db_item = await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=req.id_column_name)
-            if not db_item:
-                # El handler es responsable de lanzar la excepción
-                raise HTTPException(status_code=404, detail=f"{model_name} not found")
-            # return repo.delete(req.item_id, db, user_id=req.user_id) (ANTES)
-            # 2. ELIMINACIÓN (Llamar a un método simple que acepta el objeto)
-            # Esto requiere que repo.delete acepte el objeto, NO el ID.
-            # return repo.delete_by_object(db, db_item, user_id=req.user_id) # 👈 CAMBIAR FIRMA
-            # Cambiamos la llamada para usar el ID y la columna
-            return await repo.delete_by_id(
-                req.item_id, 
-                db, 
-                user_id=req.user_id, 
-                id_column=req.id_column_name
-            )
+        # async def logic_delete(repo, req, db):
+        #     # 🎯 Ejemplo de printf con logging (usando f-string)
+        #     # 1. BÚSQUEDA Y VALIDACIÓN (la verificación de existencia)
+        #     # Lógica más compleja: obtener, validar y actualizar (como en tu original, pero encapsulado)
+        #     db_item = await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=req.id_column_name)
+        #     if not db_item:
+        #         # El handler es responsable de lanzar la excepción
+        #         raise HTTPException(status_code=404, detail=f"{model_name} not found")
+        #     # return repo.delete(req.item_id, db, user_id=req.user_id) (ANTES)
+        #     # 2. ELIMINACIÓN (Llamar a un método simple que acepta el objeto)
+        #     # Esto requiere que repo.delete acepte el objeto, NO el ID.
+        #     # return repo.delete_by_object(db, db_item, user_id=req.user_id) # 👈 CAMBIAR FIRMA
+        #     # Cambiamos la llamada para usar el ID y la columna
+        #     return await repo.delete_by_id(
+        #         req.item_id, 
+        #         db, 
+        #         user_id=req.user_id, 
+        #         id_column=req.id_column_name
+        #     )
 
 
-        CommandDelete = create_and_register_handler("delete", {}, logic_delete)
+        # CommandDelete = create_and_register_handler("delete", {}, logic_delete)
+        CommandDelete = create_request_and_map_handler(DELETE_OPERATION, HANDLER_MAP[DELETE_OPERATION])
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = DELETE_OPERATION in secure_operations
         @router.delete("/{item_id}", status_code=204,

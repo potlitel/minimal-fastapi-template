@@ -1,15 +1,15 @@
 # repositories.py
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import api_messages, deps
-from typing import Any, Optional, Type
+from typing import Any, List, Optional, Type
 from sqlalchemy import delete
 from sqlalchemy.future import select
 
-from app.core.constants import CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_ONE_OPERATION, UPDATE_OPERATION
+from app.core.constants import CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_BY_FILTERS, GET_ONE_OPERATION, UPDATE_OPERATION
 from app.core.security.password import get_password_hash
 from app.models import Base, Bitacora, User
 
@@ -202,7 +202,16 @@ class BaseRepository:
     
     async def delete_by_id(self, item_id: Any, db: AsyncSession, user_id: Optional[str] = None, id_column: str = "id"):
         """
-        Elimina un registro forzando la ejecución de una sentencia DELETE por clave.
+        Deletes a record by directly executing a DELETE statement based on a key.
+        This high-performance method is used for fast deletions that bypass loading the object 
+        into the session first.
+
+        :param item_id: The value of the primary key or the ID column to delete (e.g., 5 or 'a1b2c3d4').
+        :param db: The asynchronous SQLAlchemy session.
+        :param user_id: The ID of the user performing the operation (for logging/auditing).
+        :param id_column: The name of the column to use as the search key (e.g., 'id', 'uuid', 'name').
+        :returns: None, as the successful response for deletion is typically 204 No Content.
+        :raises HTTPException: If a SQLAlchemy error occurs during the deletion process.
         """
         try:
             # 1. Obtener la columna dinámica
@@ -228,6 +237,28 @@ class BaseRepository:
             
         return None # Para el 204 No Content
     
+    async def get_by_filters(self, db: AsyncSession, filters: List[Any], user_id: str = None, 
+                             skip: int = 0, limit: int = 100) -> List[Base]:
+        """
+        Retrieve records by a list of SQLAlchemy filter criteria.
+        """
+        try:
+            # 1. Construir el SELECT
+            stmt = select(self.db_model).where(and_(*filters))
+            # 2. Aplicar paginación
+            stmt = stmt.offset(skip).limit(limit)
+            # 3. Ejecutar y obtener resultados
+            result = await db.execute(stmt)
+            
+            if user_id:
+                # Opcional: Loguear la acción
+                await self._log_action(db, user_id, self.db_model.__name__, GET_BY_FILTERS)
+                
+            return result.scalars().all()
+        except SQLAlchemyError as e:
+            print(f"Error en get_by_filters for {self.db_model}: {e}")
+            raise HTTPException(status_code=500, detail="Error al obtener registros con filtro")
+        
 class UserRepository(BaseRepository):
     async def create(self, db: AsyncSession, item_data: dict, user_id: str = None) -> Base:
         # lógica personalizada para User antes o después
@@ -248,3 +279,14 @@ class UserRepository(BaseRepository):
             'hashed_password': user.hashed_password,
         }
         return await super().create(db, user_data, user_id)
+
+# Esta clase hereda TODA la funcionalidad CRUD de BaseRepository
+# y está tipada genéricamente para saber que maneja objetos 'Bitacora'.
+class BitacoraRepository(BaseRepository):
+    """
+    Repositorio específico para la entidad Bitacora. 
+    Aquí se añadirán métodos personalizados de consulta si son necesarios.
+    Convención estándar en patrones de diseño para dejar un punto donde se pueda añadir lógica específica más adelante.
+    (ej., get_bitcora_by_user).
+    """
+    pass 
