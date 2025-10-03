@@ -13,8 +13,14 @@ from app.core.constants import CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERA
 from app.core.security.password import get_password_hash
 from app.models import Base, Bitacora, User
 
-class BaseRepository:
-    def __init__(self, db_model: Base):
+from typing import TypeVar, Generic
+
+# 1. Definir una variable de tipo para el Modelo de Base de Datos (TDBModel)
+# Esto le dice a Python que esta variable de tipo será reemplazada por un modelo (ej. User, Pet)
+TDBModel = TypeVar('TDBModel', bound=Base) 
+
+class BaseRepository(Generic[TDBModel]):
+    def __init__(self, db_model: Type[TDBModel]):
         """
         Initialize the repository with a specific SQLAlchemy ORM model.
 

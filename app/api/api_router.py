@@ -6,6 +6,7 @@ from app.core.constants import GET_ALL_OPERATION, GET_ONE_OPERATION, READ_ONLY
 from app.core.crud_utils import crud_router_factory
 # from app.core import BaseRepository
 from app.core.repositories import BaseRepository, BitacoraRepository, UserRepository
+from app.features.users.get_active_users import get_active_users_endpoint
 from app.models import Base, Bitacora, User
 from app.schemas.requests import UserCreateRequest
 from app.schemas.responses import BitacoraResponse, UserResponse
@@ -63,3 +64,5 @@ bitacoras_router = crud_router_factory(
     id_type=int,
     operations=READ_ONLY
 )
+
+api_router.include_router(get_active_users_endpoint.router)
