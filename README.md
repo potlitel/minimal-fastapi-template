@@ -35,8 +35,12 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
     - [1. Create SQLAlchemy model](#1-create-sqlalchemy-model)
     - [2. Create and apply alembic migration](#2-create-and-apply-alembic-migration)
     - [3. Create request and response schemas](#3-create-request-and-response-schemas)
-    - [4. Create endpoints](#4-create-endpoints)
-    - [5. Write tests](#5-write-tests)
+    - [4. Create endpoints (If you wants, else use CRUD Router Factory)](#4-create-endpoints-if-you-wants-else-use-crud-router-factory)
+    - [5. 📄 Guía de Uso: El Generador de Rutas CRUD Genéricas](#5--guía-de-uso-el-generador-de-rutas-crud-genéricas)
+      - [5.1. Requisitos Previos: Estructura del Modelo y Repositorio](#51-requisitos-previos-estructura-del-modelo-y-repositorio)
+      - [5.2. Invocación del `crud_router_factory`](#52-invocación-del-crud_router_factory)
+      - [5.3. Rutas Generadas para la Entidad `Pet`](#53-rutas-generadas-para-la-entidad-pet)
+    - [6. Write tests](#6-write-tests)
     - [6. 🚀 How to Run Your Tests](#6--how-to-run-your-tests)
       - [6.1. Running All Tests (Recommended)](#61-running-all-tests-recommended)
       - [6.2. Running with Detailed Information (Verbose)](#62-running-with-detailed-information-verbose)
@@ -479,7 +483,7 @@ class PetResponse(BaseResponse):
 
 <br>
 
-### 4. Create endpoints
+### 4. Create endpoints (If you wants, else use CRUD Router Factory)
 
 ```python
 # app/api/endpoints/pets.py
@@ -550,7 +554,89 @@ api_router.include_router(pets.router, prefix="/pets", tags=["pets"])
 
 <br>
 
-### 5. Write tests
+### 5. 📄 Guía de Uso: El Generador de Rutas CRUD Genéricas
+
+El `crud_router_factory` es una herramienta que genera automáticamente todos los endpoints CRUD (Crear, Leer, Actualizar, Borrar) para cualquier modelo de base de datos. Esto asegura que todas las operaciones pasen a través del patrón **Mediator/CQRS**.
+
+#### 5.1. Requisitos Previos: Estructura del Modelo y Repositorio
+
+Antes de usar el generador, debe crear su Modelo de Base de Datos y un Repositorio Específico que herede de la clase base genérica (`BaseRepository`).
+
+**A. Definición del Repositorio Específico**
+El Repositorio Específico actúa como un marcador de posición y un contrato de tipos. Aunque esté vacío, hereda toda la funcionalidad CRUD de `BaseRepository`.
+
+(Llevar a tabla con formato de markdown)
+Archivo	Contenido Clave
+app/repositories/pet.py	Define la subclase específica
+
+```bash
+
+# app/repositories/pet.py
+
+from app.core.repositories.base_repository import BaseRepository
+from app.models.pet import Pet # Tu Modelo de DB
+
+# Esta clase hereda TODA la funcionalidad CRUD de BaseRepository
+# y está tipada genéricamente para saber que maneja objetos 'Pet'.
+class PetRepository(BaseRepository[Pet]):
+    """
+    Repositorio específico para la entidad Pet. 
+    Aquí se añadirán métodos personalizados de consulta si son necesarios 
+    (ej., get_pets_by_owner).
+    """
+    pass
+
+```
+
+#### 5.2. Invocación del `crud_router_factory`
+
+Para generar las rutas de la entidad `Pet`, necesitas importar y llamar a la función `crud_router_factory` con la clase `PetRepository` que acabamos de definir.
+
+**Estructura de la Invocación**
+
+```bash
+# app/api/router.py (Ejemplo de configuración)
+
+from app.core.crud_utils import crud_router_factory
+from app.repositories.pet import PetRepository # 👈 Importa la clase PetRepository
+from app.schemas.pet import PetResponse, PetRequest
+from app.models.pet import Pet 
+
+# 1. Crear la instancia del Repositorio
+# Le pasamos la CLASE PetRepository, que sabe que Pet es su modelo de DB.
+pet_repository = PetRepository(db_model=Pet)
+
+# 2. Llamar a la fábrica para generar el Router
+pet_router = crud_router_factory(
+    repository=pet_repository,
+    modelResponse=PetResponse,
+    modelRequest=PetRequest,
+    model_name="Pet",
+    id_type=int,
+    # ... otras configuraciones de operaciones ...
+    operations=['read_all', 'read_one', 'create', 'update', 'delete'],
+    secure_operations=['create', 'update', 'delete'] 
+)
+```
+
+> [!NOTE]
+> Al pasar `PetRepository` como argumento `repository`, estás asegurando que cualquier llamada a un
+> método CRUD (ej., `create`) dentro de los Handlers sea ejecutada por un repositorio tipado para 
+> manejar la tabla `Pet`.
+
+#### 5.3. Rutas Generadas para la Entidad `Pet`
+
+Una vez que el router se incluye en la aplicación, la fábrica genera los endpoints bajo el prefijo `/pets` que automáticamente utilizan los Handlers de su arquitectura (ej., `GetItemsHandler`, `CreateItemHandler`).
+
+(Llevar a formato tabla de markdown)
+Operación	Método HTTP	Ruta Generada	Seguridad (si se configuró)
+read_all	GET	/pets/	Pública
+read_one	GET	/pets/{item_id}	Pública
+create	POST	/pets/	Asegurada
+update	PUT	/pets/{item_id}	Asegurada
+delete	DELETE	/pets/{item_id}	Asegurada
+
+### 6. Write tests
 
 We will write two really simple tests in combined file inside newly created `app/tests/test_pets` folder.
 
