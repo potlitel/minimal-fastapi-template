@@ -383,6 +383,8 @@ Adaptado a un sistema robusto, híbrido en arquitectura y centrado en la segurid
     - La Bitacora se incorporó como una entidad clave, gestionando las acciones del usuario (tipo auditoría).
     - Se validó su integración en el sistema genérico: se configuró el crud_router_factory para restringir sus operaciones a solo lectura (READ_ONLY) y utilizar id_type=int, confirmando que la factoría maneja restricciones específicas por entidad de manera flexible.
 
+En resumen, la evolución ha resultado en una base de código más cohesiva, auditable y escalable, lista para manejar tanto el flujo de datos genérico como la lógica de negocio compleja.
+
 
 
 
