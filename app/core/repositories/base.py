@@ -5,33 +5,45 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import api_messages, deps
-from typing import Any, List, Optional, Type
+from typing import TYPE_CHECKING, Any, List, Optional, Type
 from sqlalchemy import delete
 from sqlalchemy.future import select
 
 from app.core.constants import CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_BY_FILTERS, GET_ONE_OPERATION, UPDATE_OPERATION
-from app.core.security.password import get_password_hash
-from app.models import Base, Bitacora, User
-
+from app.models import Base
 from typing import TypeVar, Generic
+
+# 🔑 CLAVE: Importación diferida para evitar la circularidad en tiempo de ejecución
+# Si está comprobando tipos (ejecutando MyPy, IDE), el import existe.
+# Si el código se está ejecutando (runtime), el import se omite.
+if TYPE_CHECKING:
+    from app.core.repositories.audit import AuditRepository
+    # O la ruta exacta donde definió su AuditRepository
 
 # 1. Definir una variable de tipo para el Modelo de Base de Datos (TDBModel)
 # Esto le dice a Python que esta variable de tipo será reemplazada por un modelo (ej. User, Pet)
 TDBModel = TypeVar('TDBModel', bound=Base) 
 
 class BaseRepository(Generic[TDBModel]):
-    def __init__(self, db_model: Type[TDBModel]):
+    def __init__(self, db_model: Type[TDBModel], audit_repo: Optional["AuditRepository"] = None):
         """
-        Initialize the repository with a specific SQLAlchemy ORM model.
+        Inicializa el repositorio base con un modelo ORM y un repositorio de auditoría opcional.
+        
+        Este repositorio es genérico para operaciones CRUD básicas y aplica el principio
+        de inversión de dependencias (DIP) al recibir el AuditRepository.
 
-        - **param db_model**: The ORM model class representing a database table.
+        - **param db_model**: Clase del modelo ORM de SQLAlchemy que representa una tabla de la base de datos.
+        - **param audit_repo**: Instancia opcional del AuditRepository para registrar acciones.
+                                Debe ser 'None' si el repositorio no debe auditarse (ej. BitacoraRepository).
         """
         self.db_model = db_model
+        # 🔑 INYECCIÓN DEL REPOSITORIO DE AUDITORÍA
+        self.audit_repo = audit_repo 
         
-    async def _log_action(self, db: AsyncSession, user_id: str, entity: str, action: str):
-        log_entry = Bitacora(user_id=user_id, entity=entity, action=action)
-        db.add(log_entry)
-        await db.commit()
+    # async def _log_action(self, db: AsyncSession, user_id: str, entity: str, action: str):
+    #     log_entry = Bitacora(user_id=user_id, entity=entity, action=action)
+    #     db.add(log_entry)
+    #     await db.commit()
 
     async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 10, user_id: str = None):
         """
@@ -46,8 +58,8 @@ class BaseRepository(Generic[TDBModel]):
         try:
             print(f"La consulta get_all se está ejecutando para el modelo: {self.db_model.__name__}")
             result = await db.execute(select(self.db_model).offset(skip).limit(limit))
-            if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, GET_ALL_OPERATION)
+            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, GET_ALL_OPERATION)
             return result.scalars().all()
         except SQLAlchemyError as e:
             # Logging o print del error
@@ -82,8 +94,8 @@ class BaseRepository(Generic[TDBModel]):
                     detail=f"{self.db_model.__name__} not found"
                 )
             # 2. Lógica de Log (Solo si el elemento fue encontrado)
-            if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, GET_ONE_OPERATION)
+            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, GET_ONE_OPERATION)
             # 3. Retorno del elemento
             return db_item
     
@@ -111,8 +123,8 @@ class BaseRepository(Generic[TDBModel]):
         try:
             await db.commit()
             await db.refresh(db_item)
-            if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, CREATE_OPERATION)
+            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, CREATE_OPERATION)
         except IntegrityError:  # pragma: no cover
             await db.rollback()
 
@@ -136,8 +148,8 @@ class BaseRepository(Generic[TDBModel]):
                 setattr(db_item, key, value)
             await db.commit()
             await db.refresh(db_item)
-            if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, UPDATE_OPERATION)
+            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, UPDATE_OPERATION)
         except SQLAlchemyError as e:
             await db.rollback()
             print(f"Error en update for {self.db_model} entity: {e}")
@@ -165,9 +177,9 @@ class BaseRepository(Generic[TDBModel]):
             # 2. Eliminar el objeto encontrado
             await db.delete(db_item_to_delete)
             await db.commit()
-            if user_id:
+            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
                 # Asumiendo que _log_action está disponible
-                await self._log_action(db, user_id, self.db_model.__name__, DELETE_OPERATION) 
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, DELETE_OPERATION) 
                 
         except SQLAlchemyError as e:
             await db.rollback()
@@ -197,9 +209,9 @@ class BaseRepository(Generic[TDBModel]):
             await db.commit()
             
             # 2. Loguear la acción (si aplica)
-            if user_id:
+            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
                 # Asegúrate de que DELETE_OPERATION esté definida y _log_action exista
-                await self._log_action(db, user_id, self.db_model.__name__, DELETE_OPERATION) 
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, DELETE_OPERATION) 
                 
         except SQLAlchemyError as e:
             await db.rollback()
@@ -236,8 +248,8 @@ class BaseRepository(Generic[TDBModel]):
             await db.commit()
             
             # Opcional: Si necesitas loguear el ID del item eliminado:
-            if user_id:
-                await self._log_action(db, user_id, self.db_model.__name__, DELETE_OPERATION)
+            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, DELETE_OPERATION)
                 
         except SQLAlchemyError as e:
             await db.rollback()
@@ -259,9 +271,9 @@ class BaseRepository(Generic[TDBModel]):
             # 3. Ejecutar y obtener resultados
             result = await db.execute(stmt)
             
-            if user_id:
+            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
                 # Opcional: Loguear la acción
-                await self._log_action(db, user_id, self.db_model.__name__, GET_BY_FILTERS)
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, GET_BY_FILTERS)
                 
             return result.scalars().all()
         except SQLAlchemyError as e:

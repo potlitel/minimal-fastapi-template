@@ -1,10 +1,12 @@
 from typing import Optional
 from fastapi import APIRouter, Depends
 from app.api import api_messages
+from app.api.deps import get_bitacora_repository, get_user_repository
 from app.api.endpoints import auth, users
 from app.core.constants import GET_ALL_OPERATION, GET_ONE_OPERATION, READ_ONLY
 from app.core.crud_utils import crud_router_factory
 # from app.core import BaseRepository
+from app.core.repositories.audit import AuditRepository
 from app.core.repositories.base import BaseRepository
 from app.core.repositories.user import UserRepository
 from app.core.repositories.bitacora import BitacoraRepository 
@@ -43,15 +45,9 @@ api_router = APIRouter(
 )
 api_router.include_router(users.router, prefix="/profile", tags=["Profile"])
 
-
-    
-# Instancias de repositorios
-user_repository = UserRepository(User)
-bitacora_repository = BitacoraRepository(Bitacora)
-
 # Routers para cada modelo
 users_router = crud_router_factory(
-    repository=user_repository,
+    repository=get_user_repository(),
     modelResponse=UserResponse,
     modelRequest=UserCreateRequest,
     model_name="Users",
@@ -59,7 +55,7 @@ users_router = crud_router_factory(
 )
 
 bitacoras_router = crud_router_factory(
-    repository=bitacora_repository,
+    repository=get_bitacora_repository(),
     modelResponse=BitacoraResponse,
     modelRequest=None,
     model_name="Bitacora",

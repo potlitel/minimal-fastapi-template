@@ -8,7 +8,19 @@ from app.core.security.password import get_password_hash
 from app.models import Base, User
 
 class UserRepository(BaseRepository):
+    """
+    Repositorio específico para la entidad User. 
+    Aquí se añadirán métodos personalizados de persistencia o consulta para usuarios.
+    """
     async def create(self, db: AsyncSession, item_data: dict, user_id: str = None) -> Base:
+        """
+        Crea un nuevo registro de usuario en la base de datos y audita la acción.
+
+        - **param db**: Sesión asíncrona de la base de datos.
+        - **param item_data**: Diccionario de datos para el nuevo registro de usuario.
+        - **param user_id**: ID del usuario que ejecuta la operación (para fines de auditoría).
+        - **returns**: Instancia del modelo creado.
+        """
         # lógica personalizada para User antes o después
         # Ejemplo: hash de contraseña, validaciones extra
         user = await db.scalar(select(User).where(User.email == item_data['email']))
