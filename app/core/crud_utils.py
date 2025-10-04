@@ -8,7 +8,7 @@ from app.core.cqrs.commands_queries import CreateItemCommand, DeleteItemCommand,
 from app.core.cqrs.handlers import CreateItemHandler, DeleteItemHandler, GetItemHandler, GetItemsHandler, UpdateItemHandler
 # from app.core.cqrs.mediator import get_mediator
 from app.core.cqrs.mediator import mediator  # Import the instance directly
-from app.core.repositories import BaseRepository
+from app.core.repositories.base import BaseRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
 from app.models import Base, User

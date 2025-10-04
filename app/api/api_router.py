@@ -5,7 +5,9 @@ from app.api.endpoints import auth, users
 from app.core.constants import GET_ALL_OPERATION, GET_ONE_OPERATION, READ_ONLY
 from app.core.crud_utils import crud_router_factory
 # from app.core import BaseRepository
-from app.core.repositories import BaseRepository, BitacoraRepository, UserRepository
+from app.core.repositories.base import BaseRepository
+from app.core.repositories.user import UserRepository
+from app.core.repositories.bitacora import BitacoraRepository 
 from app.features.users.get_active_users import get_active_users_endpoint
 from app.models import Base, Bitacora, User
 from app.schemas.requests import UserCreateRequest

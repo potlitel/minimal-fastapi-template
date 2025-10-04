@@ -1,6 +1,6 @@
 
 import time
-from app.core.repositories import BaseRepository
+from app.core.repositories.base import BaseRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.features.users.get_active_users.get_active_users_query import GetActiveUsersQuery
 from app.models import RefreshToken, User

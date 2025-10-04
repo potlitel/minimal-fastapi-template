@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends
 from app.api.deps import get_current_user, get_session
 from app.core.cqrs.mediator import mediator
-from app.core.repositories import UserRepository
+from app.core.repositories.user import UserRepository
 from app.features.users.get_active_users.get_active_users_handler import GetActiveUsersHandler
 from app.features.users.get_active_users.get_active_users_query import GetActiveUsersQuery
 from app.models import User

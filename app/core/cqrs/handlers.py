@@ -1,6 +1,6 @@
 # handlers.py
 # from repositories import BaseRepository
-from app.core.repositories import BaseRepository
+from app.core.repositories.base import BaseRepository
 from app.core.cqrs.commands_queries import *
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
