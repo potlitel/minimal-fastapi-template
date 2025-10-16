@@ -125,6 +125,31 @@ class BaseRepository(Generic[TDBModel]):
             print(f"Error en get_by_id for {self.db_model} entity: {e}")
             raise HTTPException(status_code=500, detail=f"Error en get_by_id for {self.db_model} entity")
 
+    async def count_all(self, db: AsyncSession, user_id: str = None) -> int:
+        """
+        Obtiene el número total de registros para el modelo sin aplicar filtros ni paginación.
+        
+        :param db: Database session for async operations.
+        :param user_id: ID del usuario (para auditoría).
+        :returns: El número total de registros (int).
+        :raises HTTPException: Si la consulta a la base de datos falla.
+        """
+        try:
+            # 1. Obtener el conteo total
+            count_statement = select(func.count()).select_from(self.db_model)
+            total_count_result = await db.execute(count_statement)
+            total_count = total_count_result.scalar_one()
+            
+            # 2. Auditoría (Opcional, depende de si se auditan las operaciones de conteo simple)
+            if user_id and self.audit_repo:
+                await self.audit_repo.log(db, user_id, self.db_model.__name__, 'COUNT_OPERATION')
+
+            return total_count
+        except SQLAlchemyError as e:
+            print(f"Error en count_all for {self.db_model} entity: {e}")
+            raise HTTPException(status_code=500, detail="Error al obtener el conteo de registros")
+        
+        
     async def create(self, db: AsyncSession, item_data: dict, user_id: str = None) -> Base:
         """
         Create a new record in the database.

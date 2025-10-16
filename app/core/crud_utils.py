@@ -3,9 +3,9 @@ CURRENT_MODULE = __name__
 from fastapi import APIRouter, HTTPException, Depends, logger
 from typing import Callable, Dict, List, Optional, Type, Any, TypeVar
 from pydantic import BaseModel, ConfigDict, Field # Necesaria si IRequest hereda de un BaseModel
-from app.core.constants import ALL_OPERATIONS, CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_ONE_OPERATION, UPDATE_OPERATION
+from app.core.constants import ALL_OPERATIONS, CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_COUNT_OPERATION, GET_ONE_OPERATION, UPDATE_OPERATION
 from app.core.cqrs.commands_queries import CreateItemCommand, DeleteItemCommand, GetItemByIdQuery, GetItemsQuery, UpdateItemCommand
-from app.core.cqrs.handlers import CreateItemHandler, DeleteItemHandler, GetItemHandler, GetItemsHandler, UpdateItemHandler
+from app.core.cqrs.handlers import CreateItemHandler, DeleteItemHandler, GetItemHandler, GetItemsHandler, UpdateItemHandler, CountItemsHandler
 # from app.core.cqrs.mediator import get_mediator
 from app.core.cqrs.mediator import mediator  # Import the instance directly
 from app.core.events.producers.kafka_producer import KafkaProducerService
@@ -45,6 +45,7 @@ HANDLER_MAP = {
     CREATE_OPERATION: CreateItemHandler,
     UPDATE_OPERATION: UpdateItemHandler,
     DELETE_OPERATION: DeleteItemHandler,
+    GET_COUNT_OPERATION: CountItemsHandler
 }
 
 def crud_router_factory(
@@ -58,6 +59,41 @@ def crud_router_factory(
     secure_operations: Optional[List[str]] = None,
     kafka_topic: Optional[str] = None
 ):
+    """
+    Factoría Dinámica de Routers CRUD (Create, Read, Update, Delete).
+
+    Esta función genera un `APIRouter` de FastAPI completamente funcional
+    para una entidad de base de datos específica, siguiendo el patrón CQRS/Mediator.
+    Elimina la necesidad de escribir manualmente los endpoints CRUD repetitivos.
+
+    ### ⚙️ Mecanismo Clave: Inyección de Dependencias (DI) y CQRS
+    1.  **Generación de Request:** Por cada operación CRUD permitida, se crea una clase 
+        Pydantic (`Command`/`Query`) única en tiempo de ejecución (el "Sello Único").
+    2.  **Mapeo a Handler:** Esta clase única se registra inmediatamente en el **Mediator**
+        y se mapea a un *Handler* de lógica de negocio (ej. `GetItemsHandler`), inyectándole 
+        el repositorio específico (`repository`) de la entidad actual.
+    3.  **Endpoint:** El endpoint de FastAPI usa esta clase Pydantic generada para recibir
+        los parámetros (URL, Body, Query) y construye el objeto `Request`.
+    4.  **Ejecución:** El endpoint simplemente llama a `mediator.send(request, db)`,
+        garantizando que la lógica de negocio se ejecuta de forma desacoplada y limpia.
+
+    :param repository: Instancia del repositorio de la entidad (ej. UserRepository), 
+                       que implementa la lógica de acceso a datos para SQLAlchemy.
+    :param modelResponse: El esquema Pydantic para la respuesta HTTP (lo que devuelve el API).
+    :param modelRequest: El esquema Pydantic para la solicitud HTTP (lo que se recibe en CREATE/UPDATE).
+    :param model_name: Nombre de la entidad (ej. "User"), usado para prefijos de URL y Swagger.
+    :param id_column_name: Nombre de la columna clave usada para buscar/modificar (default: "id").
+    :param id_type: Tipo de la clave primaria (default: `str`).
+    :param operations: Lista de operaciones CRUD a incluir (ej. ['READ_ALL', 'CREATE']). 
+                       Si es `None`, incluye todas las operaciones definidas en `ALL_OPERATIONS`.
+    :param secure_operations: Lista de operaciones que requieren autenticación (`Depends(get_current_user)`). 
+                              Si es `None`, todas las operaciones se consideran seguras.
+    :param kafka_topic: Nombre del tópico de Kafka para publicar eventos de mutación (CREATE/UPDATE/DELETE). 
+                        Si es `None`, la publicación de eventos se omite.
+                        
+    :returns: Un `APIRouter` de FastAPI listo para ser incluido en la aplicación principal.
+    :raises ValueError: Si una operación en `secure_operations` no está en `operations`.
+    """
     router = APIRouter(prefix=f"/{model_name.lower()}", tags=[model_name])
     
     # Mapeo de campos requeridos para cada Command/Query
@@ -67,6 +103,7 @@ def crud_router_factory(
         CREATE_OPERATION: {"item_data": (dict, ...)},
         UPDATE_OPERATION: {"item_id": (str, ...), "item_data": (dict, ...), "id_column_name": (str, ...)},
         DELETE_OPERATION: {"item_id": (str, ...), "id_column_name": (str, ...)},
+        GET_COUNT_OPERATION: {},
     }
     
     # 1. Definir las operaciones principales por defecto
@@ -225,6 +262,36 @@ def crud_router_factory(
             # Lógica para manejar el user_id
             user_id = current_user.user_id if current_user else None
             query = QueryAll(db=db, user_id=user_id, skip=skip, limit=limit)
+            return await mediator.send(query, db)
+        
+    if GET_COUNT_OPERATION in operations:
+        QueryCount = create_request_and_map_handler(GET_COUNT_OPERATION, HANDLER_MAP[GET_COUNT_OPERATION])
+        
+        is_secure = GET_COUNT_OPERATION in secure_operations
+        @router.get("/count", response_model=int,
+                            summary=f"Get count of {model_name} items",
+                            description=f"🔢 Retrieves the total number of {model_name} records in the database, optionally respecting user scope.")
+        async def get_count(db: AsyncSession = Depends(deps.get_session),
+                            current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None):
+            """
+            Calcula y devuelve la cantidad total de registros de la entidad {model_name}.
+            
+            Este endpoint se utiliza para obtener rápidamente el número de registros,
+            siendo fundamental para la paginación y la visualización de totales en el frontend. 
+            
+            **Mecanismo de Ejecución:**
+            1.  Crea la Query única mapeada (ej., `GetCountUserRequest`).
+            2.  Inyecta la sesión de DB (`db`) y, si es una operación segura (`is_secure` es True),
+                el ID del usuario actual (`user_id`).
+            3.  Delega la ejecución al Handler registrado (`GetCountHandler`).
+            4.  El Handler utiliza el repositorio para realizar un conteo eficiente a nivel de base de datos.
+                Si se pasa `user_id`, el Handler puede aplicar filtros de negocio (ej. 'solo mis tareas').
+
+            - **Returns**: El número total de registros como un entero (`int`).
+            - **Security**: Aplica la seguridad definida en `secure_operations` para filtrar por propietario/permisos.
+            """
+            user_id = current_user.user_id if current_user else None
+            query = QueryCount(db=db, user_id=user_id)
             return await mediator.send(query, db)
     
     if GET_ONE_OPERATION in operations:

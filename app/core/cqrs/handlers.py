@@ -62,6 +62,35 @@ class GetItemsHandler:
             "hasNextPage": has_next_page,
         }
 
+class CountItemsHandler:
+    """
+        Ejecuta la operación count_all en el repositorio.
+
+        :param query: La Query que contiene la sesión de base de datos (`db`) 
+                      y el ID opcional del usuario (`user_id`).
+        :param db: La sesión asíncrona de SQLAlchemy.
+
+        :returns: El número total de registros (entero) que cumplen con los criterios 
+                  de la query (incluyendo el alcance de usuario si aplica).
+        """
+    def __init__(self, repository: BaseRepository):
+        self.repository = repository
+        
+    async def handle(self, query: CountItemsQuery, db: AsyncSession) -> int:
+        """
+        Ejecuta la operación count_all en el repositorio.
+
+        :param query: La Query que contiene la sesión de base de datos (`db`) 
+                      y el ID opcional del usuario (`user_id`).
+        :param db: La sesión asíncrona de SQLAlchemy.
+
+        :returns: El número total de registros (entero) que cumplen con los criterios 
+                  de la query (incluyendo el alcance de usuario si aplica).
+        """
+        # Delegamos al método dedicado del repositorio
+        total_count = await self.repository.count_all(db, user_id=query.user_id)
+        return total_count
+    
 class GetItemHandler:
     def __init__(self, repository: BaseRepository):
         # Initialize the handler with a repository instance for data access

@@ -43,6 +43,14 @@ class GetItemByIdQuery(BaseModel):
     user_id: Optional[str] = None
     """ID del usuario que realiza la consulta (para lógica de permisos/propiedad)."""
     
+class CountItemsQuery(BaseModel):
+    """
+    Define la intención de **RECUPERAR** el conteo total de recursos.
+    Este DTO genérico es usado para solicitar el número total de ítems.
+    """
+    user_id: Optional[str] = None
+    """ID del usuario que realiza la consulta (para lógica de permisos/propiedad)."""
+    
 # Command para actualizar un item existente
 class UpdateItemCommand(BaseModel):
     """
