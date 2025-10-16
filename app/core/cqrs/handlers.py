@@ -1,5 +1,7 @@
 # handlers.py
 # from repositories import BaseRepository
+import math
+from typing import List
 from app.core.repositories.base import BaseRepository
 from app.core.cqrs.commands_queries import *
 from sqlalchemy.orm import Session
@@ -12,11 +14,53 @@ class GetItemsHandler:
         self.repository = repository
         
     async def handle(self, query: GetItemsQuery, db: AsyncSession):
-        # Handle the request to get all items from the repository and pasas el user_id del query
-        return await self.repository.get_all(db, 
-                                             skip=query.skip,    
-                                             limit=query.limit,
-                                             user_id=query.user_id)
+        """
+        Maneja la query para obtener ítems y encapsular el resultado en PagedResult.
+        """
+        # return await self.repository.get_all(db, 
+        #                                      skip=query.skip,    
+        #                                      limit=query.limit,
+        #                                      user_id=query.user_id)
+        # El repositorio retorna la lista de ítems y el conteo total
+        items: List[Any]
+        total_count: int
+        
+        items, total_count = await self.repository.get_all(
+            db, 
+            skip=query.skip,    
+            limit=query.limit,
+            user_id=query.user_id
+        )
+        
+        # --- Lógica de cálculo de Paginación ---
+        limit = query.limit # Puede ser 0 si limit no fue pasado, manejar esto.
+        skip = query.skip
+        
+        # Prevenir división por cero si limit es 0 o negativo, usar un valor seguro.
+        effective_limit = limit if limit > 0 else 10
+
+        # pageNumber y totalPages
+        total_pages = math.ceil(total_count / effective_limit) if total_count > 0 else 0
+        
+        # pageNumber es (skip / limit) + 1. Usar max(1, ...) para que no sea 0 si skip=0
+        page_number = max(1, (skip // effective_limit) + 1)
+        
+        # hasPreviousPage y hasNextPage
+        has_previous_page = page_number > 1
+        has_next_page = page_number < total_pages
+
+        # Crear y devolver la instancia de PagedResult. 
+        # Tenga en cuenta que el tipo genérico Pydantic lo resolverá el endpoint.
+        # Por ahora, devolvemos un diccionario o un BaseModel no genérico
+        return {
+            "items": items,
+            "pageNumber": page_number,
+            "pageSize": effective_limit,
+            "totalPages": total_pages,
+            "totalCount": total_count,
+            "hasPreviousPage": has_previous_page,
+            "hasNextPage": has_next_page,
+        }
 
 class GetItemHandler:
     def __init__(self, repository: BaseRepository):

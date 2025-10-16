@@ -35,7 +35,7 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
     - [1. Create SQLAlchemy model](#1-create-sqlalchemy-model)
     - [2. Create and apply alembic migration](#2-create-and-apply-alembic-migration)
     - [3. Create request and response schemas](#3-create-request-and-response-schemas)
-    - [4. Create endpoints (If you wants, else use CRUD Router Factory)](#4-create-endpoints-if-you-wants-else-use-crud-router-factory)
+    - [4. Create endpoints (If you want to save development time, then use CRUD Router Factory)](#4-create-endpoints-if-you-want-to-save-development-time-then-use-crud-router-factory)
     - [5. 📄 Guía de Uso: El Generador de Rutas CRUD Genéricas](#5--guía-de-uso-el-generador-de-rutas-crud-genéricas)
       - [5.1. Requisitos Previos: Estructura del Modelo y Repositorio](#51-requisitos-previos-estructura-del-modelo-y-repositorio)
       - [5.2. Invocación del `crud_router_factory`](#52-invocación-del-crud_router_factory)
@@ -486,7 +486,7 @@ class PetResponse(BaseResponse):
 
 <br>
 
-### 4. Create endpoints (If you wants, else use CRUD Router Factory)
+### 4. Create endpoints (If you want to save development time, then use [CRUD Router Factory](#5--guía-de-uso-el-generador-de-rutas-crud-genéricas))
 
 ```python
 # app/api/endpoints/pets.py

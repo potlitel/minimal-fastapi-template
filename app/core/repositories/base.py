@@ -1,6 +1,6 @@
 # repositories.py
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,15 +52,32 @@ class BaseRepository(Generic[TDBModel]):
         - **param db**: Database session for async operations.
         - **param skip**: Number of records to skip (offset).
         - **param limit**: Maximum number of records to return.
-        - **returns**: List of model instances.
+        - **returns**: Una tupla que contiene:
+            1. Una lista de instancias del modelo.
+            2. El número total de registros (sin aplicar el offset/limit).
         - **raises**: 500 HTTPException if database query fails.
         """
         try:
             print(f"La consulta get_all se está ejecutando para el modelo: {self.db_model.__name__}")
-            result = await db.execute(select(self.db_model).offset(skip).limit(limit))
-            if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
-                await self.audit_repo.log(db, user_id, self.db_model.__name__, GET_ALL_OPERATION)
-            return result.scalars().all()
+            # result = await db.execute(select(self.db_model).offset(skip).limit(limit))
+            # if user_id and self.audit_repo: # 🔑 CLAVE: Verificar self.audit_repo aquí:
+            #     await self.audit_repo.log(db, user_id, self.db_model.__name__, GET_ALL_OPERATION)
+            # return result.scalars().all()
+            
+            # 1. Obtener los ítems paginados
+            items_result = await db.execute(select(self.db_model).offset(skip).limit(limit))
+            items = items_result.scalars().all()
+            
+            # 2. Obtener el conteo total (sin skip/limit)
+            count_statement = select(func.count()).select_from(self.db_model)
+            total_count_result = await db.execute(count_statement)
+            total_count = total_count_result.scalar_one()
+            
+            # 3. Registrar auditoría (lógica existente)
+            if user_id and self.audit_repo:
+                 await self.audit_repo.log(db, user_id, self.db_model.__name__, GET_ALL_OPERATION)
+
+            return items, total_count # <--- Nuevo retorno: tupla (items, total_count)
         except SQLAlchemyError as e:
             # Logging o print del error
             print(f"Error en get_all for {self.db_model} entity: {e}")

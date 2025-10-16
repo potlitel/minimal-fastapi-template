@@ -1,5 +1,5 @@
 from collections.abc import AsyncGenerator
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import api_messages
 from app.core import database_session
+from app.core.config import get_settings
+from app.core.events.producers.kafka_producer import KafkaProducerService
 from app.core.repositories.audit import AuditRepository
 from app.core.repositories.bitacora import BitacoraRepository
 from app.core.repositories.user import UserRepository
@@ -102,6 +104,12 @@ GLOBAL_BITACORA_REPO = BitacoraRepository(
     audit_repo=None # Correcto: no se audita a sí mismo
 )
 
+# 🔑 INSTANCIA GLOBAL DEL PRODUCTOR DE KAFKA
+# Usamos settings.kafka.bootstrap_servers para acceder a la configuración anidada
+GLOBAL_KAFKA_PRODUCER_SERVICE = KafkaProducerService(
+    bootstrap_servers=get_settings().kafka.bootstrap_servers 
+)
+
 # =================================================================
 # 2. DEPENDENCIAS DE FASTAPI (Funciones para inyección)
 # =================================================================
@@ -117,4 +125,17 @@ def get_user_repository():
 def get_bitacora_repository():
     """Dependencia para obtener la instancia global del BitacoraRepository."""
     return GLOBAL_BITACORA_REPO
+
+def get_kafka_producer() -> Optional[KafkaProducerService]: # <-- Cambia el retorno a Optional
+    """
+    Dependencia de FastAPI para obtener la instancia del productor de Kafka.
+
+    Devuelve la instancia global *solo si* Kafka está habilitado en la configuración.
+    Esto permite que los comandos ignoren el envío de eventos si el servicio está inactivo.
+    """
+    # Usamos el flag 'enabled' de la configuración para la condicionalidad
+    if not get_settings().kafka.enabled:
+        return None
+        
+    return GLOBAL_KAFKA_PRODUCER_SERVICE
 

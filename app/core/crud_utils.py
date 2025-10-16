@@ -1,6 +1,6 @@
 # crud_utils.py
 CURRENT_MODULE = __name__
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, logger
 from typing import Callable, Dict, List, Optional, Type, Any, TypeVar
 from pydantic import BaseModel, ConfigDict, Field # Necesaria si IRequest hereda de un BaseModel
 from app.core.constants import ALL_OPERATIONS, CREATE_OPERATION, DELETE_OPERATION, GET_ALL_OPERATION, GET_ONE_OPERATION, UPDATE_OPERATION
@@ -8,6 +8,8 @@ from app.core.cqrs.commands_queries import CreateItemCommand, DeleteItemCommand,
 from app.core.cqrs.handlers import CreateItemHandler, DeleteItemHandler, GetItemHandler, GetItemsHandler, UpdateItemHandler
 # from app.core.cqrs.mediator import get_mediator
 from app.core.cqrs.mediator import mediator  # Import the instance directly
+from app.core.events.producers.kafka_producer import KafkaProducerService
+from app.core.pagedResult.types import PagedResult
 from app.core.repositories.base import BaseRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
@@ -53,7 +55,8 @@ def crud_router_factory(
     id_column_name: str = "id",
     id_type: Type = str,
     operations: Optional[List[str]] = None,
-    secure_operations: Optional[List[str]] = None
+    secure_operations: Optional[List[str]] = None,
+    kafka_topic: Optional[str] = None
 ):
     router = APIRouter(prefix=f"/{model_name.lower()}", tags=[model_name])
     
@@ -86,50 +89,20 @@ def crud_router_factory(
             "Las operaciones seguras deben ser un subconjunto de las operaciones principales."
         )
 
+
+    # --- Funciones Auxiliares para Dependencia Condicional ---
+
+    # 🔑 FUNCIÓN CLAVE: Devuelve un producer o None si el tópico no está configurado.
+    # Esto asegura que el tipo en la función de ruta es siempre KafkaProducerService (o Optional)
+    # y el valor por defecto es simple.
+    def get_kafka_producer_or_none(kafka_topic: Optional[str] = None):
+        # Esto es solo un placeholder, la dependencia real debe ser inyectada.
+        # El problema es la forma en que FastAPI maneja el `if kafka_topic else None` en el decorador.
+        # DEBEMOS HACER QUE EL CÓDIGO SEA ESTÁTICO EN LA FIRMA.
+        return Depends(deps.get_kafka_producer)
     # -------------------------------------------------------
     # FUNCIONALIDAD CLAVE: GENERACIÓN Y REGISTRO DINÁMICO
     # -------------------------------------------------------
-
-    def create_and_register_handler(op_name: str, base_fields: dict, handler_logic: Callable):
-        """Genera y registra las clases Request/Command y Handler únicas."""
-        
-        # 1. Crear el Request/Command ÚNICO (e.g., GetUsersAllQuery)
-        request_type_name = f"{op_name.capitalize()}{model_name}Request"
-        
-        # --- CAMBIO CLAVE AQUÍ: Crear el namespace dinámico ---
-    
-        dynamic_annotations = base_fields.copy() # {'item_id': str}
-        
-        # Inicializa el diccionario de la clase (el namespace)
-        dynamic_namespace = {
-            '__module__': CURRENT_MODULE,
-            '__annotations__': dynamic_annotations # <--- Pydantic lee los campos desde aquí
-        }
-        
-        
-        # IRequest debe ser la base (e.g., IRequest(BaseRequest) con campos db y user_id)
-        UniqueRequest = type(request_type_name, (IRequest,), dynamic_namespace)
-        
-        # 2. Crear el Handler ÚNICO (e.g., GetUsersAllHandler)
-        handler_type_name = f"{op_name.capitalize()}{model_name}Handler"
-        
-        # Definición del método handle para la clase Handler
-        def handle_method(self, request: UniqueRequest, db: 'AsyncSession'):
-            # Llama a la lógica específica, usando el repositorio inyectado
-            return handler_logic(self.repository, request, db)
-            
-        # Creación de la clase Handler ÚNICA
-        UniqueHandler = type(handler_type_name, (object,), {
-            # Inyección de dependencia del repositorio
-            "__init__": lambda self, repository: setattr(self, 'repository', repository), 
-            "handle": handle_method,
-            "handles": UniqueRequest
-        })
-
-        # 3. Registro en MediatR
-        # MediatR mapea UniqueRequest -> Instancia Única de UniqueHandler
-        mediator.register_handler(UniqueRequest, UniqueHandler(repository))
-        return UniqueRequest 
 
     def create_request_and_map_handler(op_name: str, handler_class: Type, **kwargs):
         """
@@ -228,16 +201,15 @@ def crud_router_factory(
     
     # Crear las rutas según las operaciones
     if GET_ALL_OPERATION in operations:
-        # def logic_get_all(repo, req, db):
-        #     #return repo.get_all(db, user_id=req.user_id)
-        #     return repo.get_all(db, skip=req.skip, limit=req.limit, user_id=req.user_id)
-        
-        # QueryAll = create_and_register_handler("getall", {"skip": (int, 0),"limit": (int, 10)}, logic_get_all)
         QueryAll = create_request_and_map_handler(GET_ALL_OPERATION, HANDLER_MAP[GET_ALL_OPERATION])
+        
+        # 🔑 CLAVE: Definir el modelo de respuesta dinámico para PagedResult[modelResponse]
+        # Pydantic genera un modelo en tiempo de ejecución para el genérico
+        PagedModelResponse = PagedResult[modelResponse]
         
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = GET_ALL_OPERATION in secure_operations
-        @router.get("/", response_model=List[modelResponse], 
+        @router.get("/", response_model=PagedModelResponse, 
                      summary=f"Retrieve all {model_name} items", 
                      description=f"📚Fetch a list of all {model_name} records from the database.")
         async def read_all(db: AsyncSession = Depends(deps.get_session),
@@ -256,11 +228,6 @@ def crud_router_factory(
             return await mediator.send(query, db)
     
     if GET_ONE_OPERATION in operations:
-        # async def logic_get_one(repo, req, db):
-        #     return await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=req.id_column_name) 
-        # QueryOne = create_and_register_handler("getonebyid", {}, logic_get_one)
-        # Aquí eliminamos 'logic_get_one'
-        # Añadimos item_id como valor requerido en el mapeo global REQUEST_FIELDS_MAP
         QueryOne = create_request_and_map_handler(GET_ONE_OPERATION, HANDLER_MAP[GET_ONE_OPERATION])
         
         # Aquí verificamos si la operación está en la lista de operaciones seguras
@@ -281,61 +248,82 @@ def crud_router_factory(
             """
             # Tu lógica para manejar el user_id
             user_id = current_user.user_id if current_user else None
-            #query = GetItemByIdQuery(item_id=item_id, user_id=user_id)
             query = QueryOne(item_id=item_id, db=db, user_id=user_id,id_column_name=id_column_name) 
             return await mediator.send(query, db)
     
     if CREATE_OPERATION in operations:
-        # def logic_create(repo, req, db):
-        #     return repo.create(db, item_data=req.item_data, user_id=req.user_id)
-        # CommandCreate = create_and_register_handler("create", {"item_data": dict}, logic_create)
         CommandCreate = create_request_and_map_handler(CREATE_OPERATION, HANDLER_MAP[CREATE_OPERATION])
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = CREATE_OPERATION in secure_operations
-        @router.post("/", response_model=modelResponse, 
-                      status_code=201,
-                      response_model_exclude={"password"},
-                      summary=f"Create a new {model_name}",
-                      description=f"➕Add a new {model_name} to the database.")
+        @router.post("/", 
+                     response_model=modelResponse, 
+                     status_code=201,
+                     response_model_exclude={"password"},
+                     summary=f"Create a new {model_name}",
+                     description=f"➕Add a new {model_name} to the database.")
         async def create_one(item: modelRequest, 
                              db: AsyncSession = Depends(deps.get_session), 
                              # Inyectamos el usuario de forma condicional
-                             current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None):
+                             current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None,
+                             # 🔑 CORRECCIÓN APLICADA: Declaramos la dependencia SIEMPRE
+                            # y manejamos el `kafka_topic` dentro del cuerpo de la función.
+                            # Esto elimina la expresión `if/else` de la firma.
+                            kafka_producer: KafkaProducerService = Depends(deps.get_kafka_producer)
+                            ):
             """
             Create a new {model_name} record.
+            Crea un nuevo registro y publica un evento de creación a Kafka (si está configurado).
+            Implementa el patrón de Commit Dual Simplificado.
 
             - **param item**: A {model_name} object to create.
             - **Returns**: The created {model_name} with its assigned ID.
             """
-            # Lógica para manejar el user_id
             user_id = current_user.user_id if current_user else None
-            # # command = CreateItemCommand(item_data=item.dict(), user_id=user_id)
             command = CommandCreate(item_data=item.model_dump(), db=db, user_id=user_id)
-            return await mediator.send(command, db)
+            # 1. EJECUTAR HANDLER (Persistencia DB y Auditoría)
+            # El Handler se encarga de llamar a repository.create() y hacer el db.commit()
+            # return await mediator.send(command, db)
+            db_item = await mediator.send(command, db) 
+            # 2. 🔑 COMMIT DUAL: Publicar evento solo si la DB fue exitosa
+            if kafka_producer and kafka_topic:
+                try:
+                    entity_id = str(getattr(db_item, id_column_name))
+                    event_data = {
+                        "id": entity_id,
+                        "entity": model_name,
+                        "action": f"{model_name.upper()}_CREATED",
+                        "payload": item.model_dump() # Usamos el payload de la request
+                    }
+                    
+                    # Esperamos el envío (send_and_wait) para alta fiabilidad
+                    await kafka_producer.produce(
+                        topic=kafka_topic,
+                        value=event_data,
+                        key=entity_id
+                    )
+                except Exception as kafka_e:
+                    logger.warning(f"Advertencia Crítica: DB commit exitoso, pero fallo al publicar evento a Kafka. Tópico: {kafka_topic}. Error: {kafka_e}")
+                    # NOTA: No revertimos la transacción de la DB.
+
+            return db_item
 
     if UPDATE_OPERATION in operations:
-        # async def logic_update(repo, req, db):
-        #     # 1. BÚSQUEDA Y VALIDACIÓN (la verificación de existencia)
-        #     # Lógica más compleja: obtener, validar y actualizar (como en tu original, pero encapsulado)
-        #     db_item = await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=id_column_name)
-        #     if not db_item:
-        #         # El handler es responsable de lanzar la excepción
-        #         raise HTTPException(status_code=404, detail=f"{model_name} not found")
-        #     # 2. ACTUALIZACIÓN (llama a tu método 'update' con el objeto validado)
-        #     return repo.update(db, db_item, req.item_data, user_id=req.user_id)
         CommandUpdate = create_request_and_map_handler(UPDATE_OPERATION, HANDLER_MAP[UPDATE_OPERATION])
-            
-        # CommandUpdate = create_and_register_handler("update", {"item_data": dict}, logic_update)
-        # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = UPDATE_OPERATION in secure_operations
-        @router.put("/{item_id}", response_model=modelResponse,
+        @router.put("/{item_id}", 
+                    response_model=modelResponse,
                     summary=f"Update an existing {model_name}",
                     description=f"✏️Modify the {model_name} identified by the given ID.")
         async def update_one(item_id: int, 
                              item: modelResponse, 
                              db: AsyncSession = Depends(deps.get_session), 
                              # Inyectamos el usuario de forma condicional
-                             current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None):
+                             current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None,
+                             # 🔑 CORRECCIÓN APLICADA: Declaramos la dependencia SIEMPRE
+                            # y manejamos el `kafka_topic` dentro del cuerpo de la función.
+                            # Esto elimina la expresión `if/else` de la firma.
+                            kafka_producer: KafkaProducerService = Depends(deps.get_kafka_producer)
+                             ):
             """
             Update an existing {model_name} by ID.
 
@@ -348,41 +336,43 @@ def crud_router_factory(
             user_id = current_user.user_id if current_user else None
              # Usamos item.model_dump(exclude_unset=True) para actualizaciones parciales
             command = CommandUpdate(item_id=item_id, item_data=item.model_dump(exclude_unset=True), db=db, user_id=user_id, id_column_name=id_column_name)
-            return await mediator.send(command, db)
+            # return await mediator.send(command, db)
+            db_item = await mediator.send(command, db)
+            
+            # 2. 🔑 COMMIT DUAL: Publicar evento
+            if kafka_producer and kafka_topic:
+                try:
+                    entity_id = str(getattr(db_item, id_column_name))
+                    event_data = {
+                        "id": entity_id,
+                        "entity": model_name,
+                        "action": f"{model_name.upper()}_UPDATED",
+                        "payload": item.model_dump()
+                    }
+                    await kafka_producer.produce(topic=kafka_topic, value=event_data, key=entity_id)
+                except Exception as kafka_e:
+                    logger.warning(f"Advertencia: Fallo al publicar evento de UPDATE a Kafka. Error: {kafka_e}")
+            
+            return db_item
 
     if DELETE_OPERATION in operations:
-        # async def logic_delete(repo, req, db):
-        #     # 🎯 Ejemplo de printf con logging (usando f-string)
-        #     # 1. BÚSQUEDA Y VALIDACIÓN (la verificación de existencia)
-        #     # Lógica más compleja: obtener, validar y actualizar (como en tu original, pero encapsulado)
-        #     db_item = await repo.get_by_id(req.item_id, db, user_id=req.user_id, id_column=req.id_column_name)
-        #     if not db_item:
-        #         # El handler es responsable de lanzar la excepción
-        #         raise HTTPException(status_code=404, detail=f"{model_name} not found")
-        #     # return repo.delete(req.item_id, db, user_id=req.user_id) (ANTES)
-        #     # 2. ELIMINACIÓN (Llamar a un método simple que acepta el objeto)
-        #     # Esto requiere que repo.delete acepte el objeto, NO el ID.
-        #     # return repo.delete_by_object(db, db_item, user_id=req.user_id) # 👈 CAMBIAR FIRMA
-        #     # Cambiamos la llamada para usar el ID y la columna
-        #     return await repo.delete_by_id(
-        #         req.item_id, 
-        #         db, 
-        #         user_id=req.user_id, 
-        #         id_column=req.id_column_name
-        #     )
-
-
-        # CommandDelete = create_and_register_handler("delete", {}, logic_delete)
         CommandDelete = create_request_and_map_handler(DELETE_OPERATION, HANDLER_MAP[DELETE_OPERATION])
         # Aquí verificamos si la operación está en la lista de operaciones seguras
         is_secure = DELETE_OPERATION in secure_operations
-        @router.delete("/{item_id}", status_code=204,
+        @router.delete("/{item_id}", 
+                       status_code=204,
+                       response_model=None, # ✅ CLAVE: Indicar que no devuelve cuerpo (solo 204)
                        summary=f"Delete a {model_name} by ID",
                        description=f"❌Remove the {model_name} specified by the unique ID from the database.")
         async def delete_one(item_id: str, 
                              db: AsyncSession = Depends(deps.get_session), 
                              # Inyectamos el usuario de forma condicional
-                             current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None):
+                             current_user: Optional[User] = Depends(deps.get_current_user) if is_secure else None,
+                             # 🔑 CORRECCIÓN APLICADA: Declaramos la dependencia SIEMPRE
+                             # y manejamos el `kafka_topic` dentro del cuerpo de la función.
+                             # Esto elimina la expresión `if/else` de la firma.
+                             kafka_producer: KafkaProducerService = Depends(deps.get_kafka_producer)
+                             ):
             """
             Delete a {model_name} record by ID.
 
@@ -393,7 +383,24 @@ def crud_router_factory(
             # Lógica para manejar el user_id
             user_id = current_user.user_id if current_user else None
             command = CommandDelete(item_id=item_id, db=db, user_id=user_id,id_column_name=id_column_name)
-            await mediator.send(command, db)
+            # await mediator.send(command, db)
+            # El Handler ejecuta la eliminación y hace el db.commit()
+            await mediator.send(command, db) 
+            
+            # 2. 🔑 COMMIT DUAL: Publicar evento de eliminación
+            if kafka_producer and kafka_topic:
+                try:
+                    entity_id = str(item_id)
+                    event_data = {
+                        "id": entity_id,
+                        "entity": model_name,
+                        "action": f"{model_name.upper()}_DELETED",
+                        "payload": {"status": "deleted"} # Payload mínimo para DELETED
+                    }
+                    await kafka_producer.produce(topic=kafka_topic, value=event_data, key=entity_id)
+                except Exception as kafka_e:
+                    logger.warning(f"Advertencia: Fallo al publicar evento de DELETE a Kafka. Error: {kafka_e}")
+            
             return # <--- Aquí el router retorna un HTTP 204 sin contenido
             
     return router
