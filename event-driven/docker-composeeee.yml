@@ -1,0 +1,68 @@
+# docker-compose.yml (Fragmento para Kafka)
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    hostname: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      # Configuración mínima
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka-broker
+    hostname: kafka-broker
+    ports:
+      - "9092:9092"
+      # - "9093:9093"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ZOOKEEPER_CONNECTION_TIMEOUT_MS: 40000 
+      KAFKA_ZOOKEEPER_SESSION_TIMEOUT_MS: 40000
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1 
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    depends_on:
+      - zookeeper
+    healthcheck:
+      # Usar kafka-broker-api-versions.sh para verificar la conexión
+      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server kafka-broker:29092 || exit 1"]
+      interval: 5s       # Frecuencia de la prueba
+      timeout: 10s       # Tiempo máximo para una prueba
+      retries: 5         # Número de reintentos antes de considerar 'unhealthy'
+      start_period: 30s  # Dar tiempo al servicio para iniciar antes de las comprobaciones
+      
+  # Opcional: Interfaz web para ver topics y mensajes
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=broker
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+    depends_on:
+      - kafka
+      - kafka-setup # Aseguramos que los topics estén creados antes de que Kafka-UI intente conectarse
+
+  # 🚀 NUEVO SERVICIO: Encargado de montar el script y crearlos.
+  kafka-setup:
+    image: confluentinc/cp-kafka:7.5.0 # Usamos la misma imagen para tener las herramientas de Kafka
+    container_name: kafka-setup
+    # Montar el script de bash para que pueda ser ejecutado
+    volumes:
+      - ./create-topics.sh:/usr/bin/create-topics.sh
+    # 🔑 CLAVE: Ejecutar el script y luego salir
+    entrypoint: [ "/bin/bash", "/usr/bin/create-topics.sh" ]
+    depends_on:
+      kafka:
+        # condition: service_healthy
+        condition: service_started

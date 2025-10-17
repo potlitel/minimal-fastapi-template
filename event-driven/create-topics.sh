@@ -2,7 +2,7 @@
 # Script: create-topics.sh
 
 # Configuración
-KAFKA_BROKER='kafka-broker:29092' 
+KAFKA_BROKER='broker:29092' 
 TOPICS=("user_events" "order_events")
 
 echo "✅ Broker de Kafka está listo (Verificado por Healthcheck). Procediendo a la creación de tópicos."
